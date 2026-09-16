@@ -79,6 +79,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState("profile");
   const [template, setTemplate] = useState("modern");
   const [optimizing, setOptimizing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [optimization, setOptimization] = useState<Optimization | null>(null);
   const [notice, setNotice] = useState("");
 
@@ -153,6 +154,61 @@ export default function Home() {
     setNotice("优化内容已应用，可继续编辑");
   };
 
+  const exportPdf = async () => {
+    const paper = document.querySelector<HTMLElement>(".resume-paper");
+    if (!paper) {
+      setNotice("没有找到可导出的简历预览");
+      return;
+    }
+
+    setExporting(true);
+    setNotice("");
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import("html2canvas"),
+        import("jspdf"),
+      ]);
+      const canvas = await html2canvas(paper, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#fffefa",
+        logging: false,
+      });
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
+      const margin = 8;
+      const pageWidth = pdf.internal.pageSize.getWidth() - margin * 2;
+      const pageHeight = pdf.internal.pageSize.getHeight() - margin * 2;
+      const sliceHeight = Math.floor(canvas.width * pageHeight / pageWidth);
+      let offset = 0;
+      let pageIndex = 0;
+
+      while (offset < canvas.height) {
+        const currentHeight = Math.min(sliceHeight, canvas.height - offset);
+        const pageCanvas = document.createElement("canvas");
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = currentHeight;
+        const context = pageCanvas.getContext("2d");
+        if (!context) throw new Error("无法创建 PDF 画布");
+        context.fillStyle = "#fffefa";
+        context.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        context.drawImage(canvas, 0, offset, canvas.width, currentHeight, 0, 0, canvas.width, currentHeight);
+        if (pageIndex > 0) pdf.addPage();
+        const renderedHeight = currentHeight * pageWidth / canvas.width;
+        pdf.addImage(pageCanvas.toDataURL("image/jpeg", 0.96), "JPEG", margin, margin, pageWidth, renderedHeight, undefined, "FAST");
+        offset += currentHeight;
+        pageIndex += 1;
+      }
+
+      const safeName = (draft.name.trim() || "ResumePilot").replace(/[\\/:*?"<>|]/g, "-");
+      pdf.save(`${safeName}-简历.pdf`);
+      setNotice("PDF 已生成并开始下载");
+    } catch (error) {
+      setNotice(error instanceof Error ? `PDF 导出失败：${error.message}` : "PDF 导出失败，请重试");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const score = useMemo(() => {
     const filled = Object.values(draft).filter((value) => value.trim().length > 8).length;
     const hasMetrics = /\d+%|提升|降低|增长|用户/.test(draft.experience + draft.projectDetail);
@@ -172,7 +228,7 @@ export default function Home() {
         </div>
         <div className="top-actions">
           <Button variant="ghost" onClick={saveDraft}><Save />保存</Button>
-          <Button variant="outline" onClick={() => window.print()}><FileDown />导出 PDF</Button>
+          <Button variant="outline" onClick={exportPdf} disabled={exporting}>{exporting ? <LoaderCircle className="spin" /> : <FileDown />}{exporting ? "正在生成" : "导出 PDF"}</Button>
         </div>
       </header>
 
