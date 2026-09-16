@@ -198,8 +198,8 @@ export default function Home() {
 
         <section className="editor-panel">
           <div className="editor-heading">
-            <div><span className="eyebrow">简历编辑器</span><h1>把经历写成证据</h1></div>
-            <Button className="ai-button" onClick={optimizeCurrent} disabled={optimizing}>{optimizing ? <LoaderCircle className="spin" /> : <Sparkles />}{optimizing ? "AI 正在分析" : "AI 优化当前内容"}</Button>
+            <div><span className="eyebrow">Resume editor · 01</span><h1>把经历写成证据</h1><p className="editor-deck">清楚、具体、可信。让每一段内容都经得起招聘者追问。</p></div>
+            <Button variant="outline" className="ai-button" onClick={optimizeCurrent} disabled={optimizing}>{optimizing ? <LoaderCircle className="spin" /> : <Sparkles />}{optimizing ? "正在检查" : "检查当前内容"}</Button>
           </div>
 
           <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setOptimization(null); }} className="editor-tabs">
@@ -264,7 +264,7 @@ export default function Home() {
             </TabsContent>
           </Tabs>
           {optimization && <section className="coach-card" aria-live="polite">
-            <div className="coach-heading"><span><Sparkles /></span><div><small>{optimization.source === "ai" ? "AI 简历教练" : "基础检查"}</small><h2>{optimization.headline}</h2></div></div>
+            <div className="coach-heading"><span><Sparkles /></span><div><small>{optimization.source === "ai" ? "编辑建议" : "基础检查"}</small><h2>{optimization.headline}</h2></div></div>
             <div className="coach-columns"><div><strong>做得不错</strong>{optimization.strengths.map((item) => <p key={item}><Check />{item}</p>)}</div><div><strong>建议改进</strong>{optimization.improvements.map((item) => <p key={item}><ArrowUpRight />{item}</p>)}</div></div>
             <div className="keyword-row">{optimization.keywords.map((item) => <span key={item}>{item}</span>)}</div>
             {activeTab !== "target" && <Button onClick={applyOptimization}>应用优化版本</Button>}
