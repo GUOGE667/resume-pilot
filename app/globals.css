@@ -109,6 +109,22 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .field input, .field textarea { width: 100%; border: 1px solid #cbc7bc; border-radius: 2px; padding: 11px 12px; color: #1b1d1b; background: #fffefa; outline: none; transition: .18s ease; font-size: .85rem; font-weight: 450; }
 .field textarea { min-height: 108px; resize: vertical; line-height: 1.65; }
 .field input:focus, .field textarea:focus { border-color: #536d63; box-shadow: 0 0 0 3px rgba(83,109,99,.1); }
+.avatar-field { display: grid; grid-template-columns: 92px 1fr; gap: 18px; align-items: center; padding: 16px; border: 1px solid #d3d0c8; background: #faf8f3; }
+.avatar-preview { width: 92px; aspect-ratio: 1; display: grid; place-items: center; overflow: hidden; border: 1px dashed #a8afa8; border-radius: 50%; color: #6d7b73; background: #f0eee7; }
+.avatar-preview.has-image { border-style: solid; border-color: #8f9b93; }
+.avatar-preview img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-preview svg { width: 25px; height: 25px; }
+.avatar-copy { min-width: 0; }
+.avatar-copy > strong { color: #28332e; font-family: Georgia, "Noto Serif SC", serif; font-size: .86rem; }
+.avatar-copy > p { max-width: 480px; margin: 5px 0 12px; color: #667085; font-size: .72rem; line-height: 1.55; }
+.avatar-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.avatar-upload-button, .avatar-remove-button { min-height: 34px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid #536d63; padding: 7px 11px; color: #273f37; background: #fff; cursor: pointer; font: inherit; font-size: .72rem; font-weight: 700; }
+.avatar-upload-button:hover { background: #edf1ed; }
+.avatar-upload-button:focus-within, .avatar-remove-button:focus-visible { outline: 3px solid rgba(83,109,99,.18); outline-offset: 2px; }
+.avatar-upload-button input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.avatar-upload-button svg, .avatar-remove-button svg { width: 14px; height: 14px; }
+.avatar-remove-button { border-color: #d1b6ae; color: #8d3f30; background: transparent; }
+.avatar-remove-button:hover { background: #f7ece8; }
 .add-row { width: max-content; display: inline-flex; align-items: center; gap: 7px; border: 0; padding: 5px 0; color: #155eef; background: transparent; cursor: pointer; font-size: .78rem; font-weight: 700; }
 .add-row svg { width: 15px; }
 .match-card { display: grid; gap: 13px; padding: 18px; border: 1px solid #adb8b0; border-left: 3px solid #273f37; border-radius: 0; background: #f2f3ed; }
@@ -141,9 +157,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .preview-toolbar svg { width: 15px; }
 .resume-paper { width: 100%; max-width: 660px; min-height: 860px; margin: 0 auto; padding: clamp(38px, 5vw, 64px); color: #242824; background: #fffefa; box-shadow: 0 14px 34px rgba(48,43,34,.13); }
 .resume-paper > header { padding-bottom: 22px; border-bottom: 1px solid #273f37; }
+.resume-header { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 28px; align-items: center; }
+.resume-identity { min-width: 0; }
 .resume-paper h2 { margin: 0; color: #1c211e; font-family: Georgia, "Noto Serif SC", serif; font-size: 2rem; font-weight: 600; letter-spacing: -.025em; }
-.resume-paper header > p { margin: 6px 0 14px; color: #566b62; font-size: .78rem; font-weight: 700; letter-spacing: .06em; }
-.resume-paper header > div { display: flex; flex-wrap: wrap; gap: 8px 18px; color: #667085; font-size: .65rem; }
+.resume-identity > p { margin: 6px 0 14px; color: #566b62; font-size: .78rem; font-weight: 700; letter-spacing: .06em; }
+.resume-identity > div { display: flex; flex-wrap: wrap; gap: 8px 18px; color: #667085; font-size: .65rem; }
+.resume-avatar { width: 72px; height: 88px; object-fit: cover; object-position: center 28%; border: 1px solid #c9cec9; border-radius: 3px; background: #f3f1ea; }
 .resume-section { padding-top: 20px; }
 .resume-section h3 { margin: 0 0 10px; color: #273f37; font-family: Georgia, "Noto Serif SC", serif; font-size: .7rem; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
 .resume-section p, .resume-entry li { color: #475467; font-size: .7rem; line-height: 1.55; }
@@ -157,8 +176,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .skill-pills span { padding: 3px 0; border-bottom: 1px solid #bdc6c0; border-radius: 0; color: #273f37; background: transparent; font-size: .62rem; font-weight: 650; }
 .resume-paper.classic > header { text-align: center; border-bottom-color: #344054; }
 .resume-paper.classic h2 { color: #101828; font-family: "Times New Roman", "Songti SC", serif; }
-.resume-paper.classic header > p { color: #475467; }
-.resume-paper.classic header > div { justify-content: center; }
+.resume-paper.classic .resume-identity > p { color: #475467; }
+.resume-paper.classic .resume-identity > div { justify-content: center; }
+.resume-paper.classic .resume-avatar { width: 74px; height: 74px; border-radius: 50%; }
 .resume-paper.classic .resume-section h3 { color: #101828; border-bottom: 1px solid #98a2b3; padding-bottom: 4px; }
 
 @media (max-width: 1180px) {
@@ -180,9 +200,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .editor-heading { align-items: stretch; flex-direction: column; }
   .tab-list { gap: 14px; overflow-x: auto; }
   .field-grid.two { grid-template-columns: 1fr; }
+  .avatar-field { grid-template-columns: 72px 1fr; gap: 14px; padding: 14px; }
+  .avatar-preview { width: 72px; }
   .coach-columns { grid-template-columns: 1fr; }
   .preview-panel { padding: 22px 12px 50px; }
   .resume-paper { min-height: 700px; padding: 30px 25px; }
+  .resume-header { gap: 16px; }
+  .resume-avatar { width: 62px; height: 76px; }
 }
 
 @media print {

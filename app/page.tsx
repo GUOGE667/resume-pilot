@@ -5,6 +5,7 @@ import {
   ArrowUpRight,
   BriefcaseBusiness,
   Check,
+  Camera,
   FileDown,
   FileText,
   GraduationCap,
@@ -13,6 +14,8 @@ import {
   Save,
   Sparkles,
   Target,
+  Trash2,
+  Upload,
   UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type ResumeDraft = {
+  avatar: string;
   name: string;
   title: string;
   email: string;
@@ -51,6 +55,7 @@ type Optimization = {
 };
 
 const initialDraft: ResumeDraft = {
+  avatar: "",
   name: "林知远",
   title: "前端开发实习生",
   email: "hello@example.com",
@@ -268,6 +273,11 @@ export default function Home() {
 
             <TabsContent value="profile" className="form-stack">
               <FormSection id="profile" index="01" title="基本信息" description="保持简洁，让招聘者在十秒内了解你。">
+                <AvatarUpload
+                  value={draft.avatar}
+                  onChange={(value) => update("avatar", value)}
+                  onNotice={setNotice}
+                />
                 <div className="field-grid two">
                   <Field label="姓名" value={draft.name} onChange={(value) => update("name", value)} />
                   <Field label="求职方向" value={draft.title} onChange={(value) => update("title", value)} />
@@ -331,7 +341,10 @@ export default function Home() {
         <aside className="preview-panel">
           <div className="preview-toolbar"><div><span className="eyebrow">实时预览</span><strong>{template === "modern" ? "现代单栏" : "经典商务"}</strong></div><Select value={template} onValueChange={setTemplate}><SelectTrigger aria-label="选择简历模板"><LayoutTemplate /><SelectValue /></SelectTrigger><SelectContent><SelectItem value="modern">现代单栏</SelectItem><SelectItem value="classic">经典商务</SelectItem></SelectContent></Select></div>
           <article className={`resume-paper ${template}`}>
-            <header><h2>{draft.name || "你的姓名"}</h2><p>{draft.title || "目标职位"}</p><div><span>{draft.email}</span><span>{draft.phone}</span><span>{draft.city}</span></div></header>
+            <header className="resume-header">
+              <div className="resume-identity"><h2>{draft.name || "你的姓名"}</h2><p>{draft.title || "目标职位"}</p><div><span>{draft.email}</span><span>{draft.phone}</span><span>{draft.city}</span></div></div>
+              {draft.avatar && <img className="resume-avatar" src={draft.avatar} alt={`${draft.name || "求职者"}的头像`} />}
+            </header>
             <ResumeSection title="个人简介"><p>{draft.summary}</p></ResumeSection>
             <ResumeSection title="教育经历"><ResumeEntry title={draft.school} meta={draft.educationDate} subtitle={draft.degree} /></ResumeSection>
             <ResumeSection title="实习经历"><ResumeEntry title={draft.company} meta={draft.experienceDate} subtitle={draft.role}>{splitLines(draft.experience).map((item) => <li key={item}>{item}</li>)}</ResumeEntry></ResumeSection>
@@ -350,6 +363,83 @@ function FormSection({ id, index, title, description, children }: { id: string; 
 
 function Field({ label, value, onChange, multiline = false }: { label: string; value: string; onChange: (value: string) => void; multiline?: boolean }) {
   return <label className="field"><span>{label}</span>{multiline ? <textarea value={value} onChange={(event) => onChange(event.target.value)} /> : <input value={value} onChange={(event) => onChange(event.target.value)} />}</label>;
+}
+
+function AvatarUpload({ value, onChange, onNotice }: { value: string; onChange: (value: string) => void; onNotice: (message: string) => void }) {
+  const processAvatar = (file: File) => {
+    if (!file.type.match(/^image\/(jpeg|png|webp)$/)) {
+      onNotice("请选择 JPG、PNG 或 WebP 图片");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      onNotice("图片请控制在 8MB 以内");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = () => onNotice("头像读取失败，请换一张图片重试");
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => onNotice("图片格式无法识别，请换一张图片重试");
+      image.onload = () => {
+        const size = Math.min(image.naturalWidth, image.naturalHeight);
+        const canvas = document.createElement("canvas");
+        canvas.width = 640;
+        canvas.height = 640;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          onNotice("头像处理失败，请重试");
+          return;
+        }
+        context.fillStyle = "#f4f1e9";
+        context.fillRect(0, 0, 640, 640);
+        context.drawImage(
+          image,
+          (image.naturalWidth - size) / 2,
+          (image.naturalHeight - size) / 2,
+          size,
+          size,
+          0,
+          0,
+          640,
+          640,
+        );
+        onChange(canvas.toDataURL("image/jpeg", 0.88));
+        onNotice("头像已自动裁切并加入简历");
+        window.setTimeout(() => onNotice(""), 2400);
+      };
+      image.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="avatar-field">
+      <div className={`avatar-preview ${value ? "has-image" : ""}`}>
+        {value ? <img src={value} alt="头像预览" /> : <Camera aria-hidden="true" />}
+      </div>
+      <div className="avatar-copy">
+        <strong>个人头像</strong>
+        <p>建议使用正面半身照，背景简洁。上传后会自动居中裁切，不会上传到服务器。</p>
+        <div className="avatar-actions">
+          <label className="avatar-upload-button">
+            <Upload aria-hidden="true" />
+            {value ? "更换头像" : "上传头像"}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) processAvatar(file);
+                event.target.value = "";
+              }}
+            />
+          </label>
+          {value && <button type="button" className="avatar-remove-button" onClick={() => { onChange(""); onNotice("头像已移除"); }}><Trash2 aria-hidden="true" />移除</button>}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ResumeSection({ title, children }: { title: string; children: React.ReactNode }) {
