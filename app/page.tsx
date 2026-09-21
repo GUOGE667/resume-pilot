@@ -54,6 +54,19 @@ type Optimization = {
   source: "ai" | "fallback";
 };
 
+type CareerFeedback = {
+  source: "echohire";
+  role: string;
+  score: number | null;
+  headline: string;
+  summary: string;
+  strengths: string[];
+  improvements: string[];
+  actionPlan: string[];
+};
+
+const ECHOHIRE_URL = "https://echohire-ai-interview.guolinghao6.chatgpt.site/";
+
 const initialDraft: ResumeDraft = {
   avatar: "",
   name: "林知远",
@@ -86,12 +99,28 @@ export default function Home() {
   const [optimizing, setOptimizing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [optimization, setOptimization] = useState<Optimization | null>(null);
+  const [careerFeedback, setCareerFeedback] = useState<CareerFeedback | null>(null);
   const [notice, setNotice] = useState("");
 
   useEffect(() => {
     const stored = localStorage.getItem("resumepilot-draft");
     if (!stored) return;
     try { setDraft({ ...initialDraft, ...(JSON.parse(stored) as Partial<ResumeDraft>) }); } catch { localStorage.removeItem("resumepilot-draft"); }
+  }, []);
+
+  useEffect(() => {
+    const prefix = "#career-feedback=";
+    if (!window.location.hash.startsWith(prefix)) return;
+    try {
+      const feedback = JSON.parse(decodeURIComponent(window.location.hash.slice(prefix.length))) as CareerFeedback;
+      if (feedback.source !== "echohire" || !Array.isArray(feedback.improvements)) throw new Error("invalid feedback");
+      setCareerFeedback(feedback);
+      setActiveTab("project");
+      setNotice("EchoHire 面试反馈已导入，可据此修改简历");
+      window.history.replaceState(null, "", window.location.pathname);
+    } catch {
+      setNotice("EchoHire 反馈无法读取，请返回面试报告重新操作");
+    }
   }, []);
 
   useEffect(() => {
@@ -134,6 +163,31 @@ export default function Home() {
     setSaved(true);
     setNotice("草稿已保存在当前浏览器");
     window.setTimeout(() => setNotice(""), 2400);
+  };
+
+  const startInterview = () => {
+    if (draft.jobDescription.trim().length < 20) {
+      setNotice("请先填写至少 20 字的职位 JD");
+      return;
+    }
+    const payload = {
+      resume: {
+        name: draft.name,
+        title: draft.title,
+        summary: draft.summary,
+        school: draft.school,
+        degree: draft.degree,
+        company: draft.company,
+        role: draft.role,
+        experience: draft.experience,
+        project: draft.project,
+        projectRole: draft.projectRole,
+        projectDetail: draft.projectDetail,
+        skills: draft.skills,
+      },
+      jobDescription: draft.jobDescription,
+    };
+    window.location.href = `${ECHOHIRE_URL}#setup?handoff=${encodeURIComponent(JSON.stringify(payload))}`;
   };
 
   const currentContent = activeTab === "experience" ? draft.experience : activeTab === "project" ? draft.projectDetail : activeTab === "target" ? draft.jobDescription : draft.summary;
@@ -326,9 +380,19 @@ export default function Home() {
                   <Progress value={score} />
                   <p>已识别 React、TypeScript、产品意识和团队协作。建议再补充一条带量化结果的项目成果。</p>
                 </div>
+                <div className="interview-handoff">
+                  <div><strong>用当前简历检验真实表达</strong><p>将简历正文和职位 JD 带入 EchoHire，自动生成针对性问题。头像和联系方式不会传递。</p></div>
+                  <Button onClick={startInterview}>用这份简历开始面试<ArrowUpRight /></Button>
+                </div>
               </FormSection>
             </TabsContent>
           </Tabs>
+          {careerFeedback && <section className="career-feedback-card" aria-live="polite">
+            <div className="career-feedback-heading"><div><span className="eyebrow">EchoHire 面试复盘</span><h2>{careerFeedback.headline}</h2><p>{careerFeedback.summary}</p></div><strong>{careerFeedback.score ?? "—"}<small>面试得分</small></strong></div>
+            <div className="career-feedback-grid"><div><b>简历中值得保留</b>{careerFeedback.strengths.map((item) => <p key={item}><Check />{item}</p>)}</div><div><b>优先补强</b>{careerFeedback.improvements.map((item) => <p key={item}><Target />{item}</p>)}</div></div>
+            <div className="career-action-plan"><b>修改顺序</b>{careerFeedback.actionPlan.map((item, index) => <span key={item}><i>{index + 1}</i>{item}</span>)}</div>
+            <div className="career-feedback-actions"><Button onClick={() => { setActiveTab("project"); setNotice("请按面试反馈补充项目证据，再点击“检查当前内容”"); }}>开始修改项目经历</Button><button type="button" onClick={() => setCareerFeedback(null)}>暂时收起</button></div>
+          </section>}
           {optimization && <section className="coach-card" aria-live="polite">
             <div className="coach-heading"><span><Sparkles /></span><div><small>{optimization.source === "ai" ? "编辑建议" : "基础检查"}</small><h2>{optimization.headline}</h2></div></div>
             <div className="coach-columns"><div><strong>做得不错</strong>{optimization.strengths.map((item) => <p key={item}><Check />{item}</p>)}</div><div><strong>建议改进</strong>{optimization.improvements.map((item) => <p key={item}><ArrowUpRight />{item}</p>)}</div></div>

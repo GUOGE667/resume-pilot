@@ -131,6 +131,26 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .match-card > div { display: flex; justify-content: space-between; color: #344054; font-size: .8rem; }
 .match-card strong { color: #273f37; font-size: 1.15rem; }
 .match-card p { margin: 0; color: #475467; font-size: .76rem; line-height: 1.55; }
+.interview-handoff { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 20px; padding: 20px; border: 1px solid #9eaaa2; background: #edf1ed; }
+.interview-handoff strong { color: #273f37; font-family: Georgia, "Noto Serif SC", serif; font-size: .92rem; }
+.interview-handoff p { max-width: 520px; margin: 6px 0 0; color: #667085; font-size: .73rem; line-height: 1.55; }
+.interview-handoff button { white-space: nowrap; background: #273f37; color: #fff; }
+.career-feedback-card { display: grid; gap: 20px; margin-top: 20px; padding: 24px; border: 1px solid #9daaa1; border-left: 3px solid #273f37; background: #eef1eb; }
+.career-feedback-heading { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 22px; align-items: start; }
+.career-feedback-heading h2 { margin: 5px 0 7px; color: #26332d; font-family: Georgia, "Noto Serif SC", serif; font-size: 1.12rem; }
+.career-feedback-heading p { max-width: 620px; margin: 0; color: #667085; font-size: .76rem; line-height: 1.6; }
+.career-feedback-heading > strong { min-width: 76px; display: grid; justify-items: end; color: #273f37; font-size: 2rem; line-height: 1; }
+.career-feedback-heading small { margin-top: 6px; color: #667085; font-size: .62rem; font-weight: 650; }
+.career-feedback-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 22px; }
+.career-feedback-grid > div { border-top: 1px solid #c9d0ca; padding-top: 14px; }
+.career-feedback-grid b, .career-action-plan > b { color: #34423b; font-size: .75rem; }
+.career-feedback-grid p { display: grid; grid-template-columns: 16px 1fr; gap: 7px; margin: 10px 0 0; color: #56645d; font-size: .72rem; line-height: 1.5; }
+.career-feedback-grid svg { width: 14px; color: #45685a; }
+.career-action-plan { display: grid; grid-template-columns: auto repeat(3,minmax(0,1fr)); gap: 10px; align-items: center; }
+.career-action-plan span { display: flex; align-items: center; gap: 8px; color: #56645d; font-size: .7rem; line-height: 1.45; }
+.career-action-plan i { width: 22px; height: 22px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid #a8b4ac; border-radius: 50%; color: #273f37; font-size: .64rem; font-style: normal; font-weight: 700; }
+.career-feedback-actions { display: flex; align-items: center; gap: 12px; }
+.career-feedback-actions > button:last-child { border: 0; color: #667085; background: transparent; cursor: pointer; font: inherit; font-size: .72rem; font-weight: 700; }
 .coach-card { position: relative; display: grid; gap: 18px; margin-top: 20px; padding: 22px 22px 22px 26px; border: 1px solid #c8c3b8; border-left: 3px solid #a34a35; border-radius: 0; background: #f4f0e7; box-shadow: none; }
 .coach-heading { display: flex; align-items: center; gap: 12px; }
 .coach-heading > span { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid #c4b9aa; border-radius: 50%; color: #8d3f30; background: transparent; }
@@ -203,6 +223,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .avatar-field { grid-template-columns: 72px 1fr; gap: 14px; padding: 14px; }
   .avatar-preview { width: 72px; }
   .coach-columns { grid-template-columns: 1fr; }
+  .interview-handoff { grid-template-columns: 1fr; }
+  .interview-handoff button { width: 100%; }
+  .career-feedback-heading, .career-feedback-grid { grid-template-columns: 1fr; }
+  .career-feedback-heading > strong { justify-items: start; }
+  .career-action-plan { grid-template-columns: 1fr; }
   .preview-panel { padding: 22px 12px 50px; }
   .resume-paper { min-height: 700px; padding: 30px 25px; }
   .resume-header { gap: 16px; }
