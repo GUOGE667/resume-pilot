@@ -305,6 +305,7 @@ export default function Home() {
             <button className={`rail-item ${activeTab === "project" ? "active" : ""}`} onClick={() => setActiveTab("project")}><span><LayoutTemplate /></span><div><strong>项目经历</strong><small>作品与技术亮点</small></div><Check /></button>
             <button className={`rail-item ${activeTab === "target" ? "active" : ""}`} onClick={() => setActiveTab("target")}><span><Target /></span><div><strong>目标岗位</strong><small>匹配 JD 关键词</small></div><ArrowUpRight /></button>
           </nav>
+          <a className="career-route-link" href={`${ECHOHIRE_URL}#career`}>查看职业路线 <ArrowUpRight size={16} /></a>
           <div className="privacy-note">
             <strong>本地私有保存</strong>
             <p>简历草稿保存在当前浏览器，不会公开展示。</p>
@@ -391,7 +392,7 @@ export default function Home() {
             <div className="career-feedback-heading"><div><span className="eyebrow">EchoHire 面试复盘</span><h2>{careerFeedback.headline}</h2><p>{careerFeedback.summary}</p></div><strong>{careerFeedback.score ?? "—"}<small>面试得分</small></strong></div>
             <div className="career-feedback-grid"><div><b>简历中值得保留</b>{careerFeedback.strengths.map((item) => <p key={item}><Check />{item}</p>)}</div><div><b>优先补强</b>{careerFeedback.improvements.map((item) => <p key={item}><Target />{item}</p>)}</div></div>
             <div className="career-action-plan"><b>修改顺序</b>{careerFeedback.actionPlan.map((item, index) => <span key={item}><i>{index + 1}</i>{item}</span>)}</div>
-            <div className="career-feedback-actions"><Button onClick={() => { setActiveTab("project"); setNotice("请按面试反馈补充项目证据，再点击“检查当前内容”"); }}>开始修改项目经历</Button><button type="button" onClick={() => setCareerFeedback(null)}>暂时收起</button></div>
+            <div className="career-feedback-actions"><Button onClick={() => { setActiveTab("project"); setNotice("请按面试反馈补充项目证据，再点击“检查当前内容”"); }}>开始修改项目经历</Button><a href={`${ECHOHIRE_URL}#career`}>返回职业路线</a><button type="button" onClick={() => setCareerFeedback(null)}>暂时收起</button></div>
           </section>}
           {optimization && <section className="coach-card" aria-live="polite">
             <div className="coach-heading"><span><Sparkles /></span><div><small>{optimization.source === "ai" ? "编辑建议" : "基础检查"}</small><h2>{optimization.headline}</h2></div></div>
