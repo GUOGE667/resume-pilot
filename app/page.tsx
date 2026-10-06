@@ -401,8 +401,8 @@ export default function Home() {
                   <p className="match-disclaimer">仅对照文字提及情况，不能验证能力，也不代表录用概率。最多展示 12 项可识别关键词。</p>
                 </div>
                 <div className="interview-handoff">
-                  <div><strong>用当前简历检验真实表达</strong><p>将简历正文和职位 JD 带入 EchoHire，自动生成针对性问题。头像和联系方式不会传递。</p></div>
-                  <Button onClick={startInterview}>用这份简历开始面试<ArrowUpRight /></Button>
+                  <div><strong>带着目标岗位开始面试练习</strong><p>将求职方向、职位 JD 和简历正文导入 EchoHire。当前免费题目只根据岗位和 JD 生成，简历正文暂不参与出题。头像和联系方式不会传递。</p></div>
+                  <Button onClick={startInterview}>前往 EchoHire 练习<ArrowUpRight /></Button>
                 </div>
               </FormSection>
             </TabsContent>
