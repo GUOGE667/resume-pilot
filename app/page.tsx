@@ -1,6 +1,6 @@
 "use client";
 
-import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   ArrowUpRight,
   BriefcaseBusiness,
@@ -83,6 +83,52 @@ const sampleFields: Array<{ key: keyof ResumeDraft; label: string }> = [
 
 const emptyDraft = Object.fromEntries(DRAFT_FIELDS.map((key) => [key, ""])) as ResumeDraft;
 
+const subscribeToHydration = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
+function readStoredDraft(): { value: ResumeDraft; error: boolean } {
+  if (typeof window === "undefined") return { value: initialDraft, error: false };
+  try {
+    const stored = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!stored) return { value: initialDraft, error: false };
+    const parsed: unknown = JSON.parse(stored);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid draft");
+    const fields = parsed as Record<string, unknown>;
+    const value = { ...initialDraft };
+    for (const field of DRAFT_FIELDS) {
+      if (fields[field] !== undefined) {
+        if (typeof fields[field] !== "string") throw new Error("invalid draft field");
+        value[field] = fields[field];
+      }
+    }
+    return { value, error: false };
+  } catch {
+    return { value: initialDraft, error: true };
+  }
+}
+
+function readCareerFeedback(): { feedback: CareerFeedback | null; notice: string; hasHash: boolean } {
+  if (typeof window === "undefined" || !window.location.hash.startsWith("#career-feedback=")) {
+    return { feedback: null, notice: "", hasHash: false };
+  }
+  try {
+    const raw: unknown = JSON.parse(decodeURIComponent(window.location.hash.slice("#career-feedback=".length)));
+    if (!raw || typeof raw !== "object") throw new Error("invalid feedback");
+    const feedback = raw as Record<string, unknown>;
+    const isTextArray = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string");
+    if (feedback.source !== "echohire" || typeof feedback.role !== "string" ||
+      typeof feedback.headline !== "string" || typeof feedback.summary !== "string" ||
+      !(feedback.score === null || typeof feedback.score === "number" && Number.isFinite(feedback.score)) ||
+      !isTextArray(feedback.strengths) || !isTextArray(feedback.improvements) || !isTextArray(feedback.actionPlan)) {
+      throw new Error("invalid feedback");
+    }
+    return { feedback: feedback as CareerFeedback, notice: "EchoHire 面试反馈已导入，可据此修改简历", hasHash: true };
+  } catch {
+    return { feedback: null, notice: "EchoHire 反馈无法读取，请返回面试报告重新操作", hasHash: true };
+  }
+}
+
 function persistDraft(value: ResumeDraft): boolean {
   try {
     localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(value));
@@ -95,21 +141,23 @@ function persistDraft(value: ResumeDraft): boolean {
 const splitLines = (value: string) => value.split(/[；;\n]/).map((item) => item.trim()).filter(Boolean);
 
 export default function Home() {
-  const [draft, setDraft] = useState(initialDraft);
-  const draftRef = useRef(initialDraft);
+  const [storedDraft] = useState(readStoredDraft);
+  const [incomingFeedback] = useState(readCareerFeedback);
+  const loaded = useSyncExternalStore(subscribeToHydration, getClientSnapshot, getServerSnapshot);
+  const [draft, setDraft] = useState(storedDraft.value);
+  const draftRef = useRef(storedDraft.value);
   const backupInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(true);
-  const [saveError, setSaveError] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [saveError, setSaveError] = useState(storedDraft.error);
   const [backupError, setBackupError] = useState("");
   const [pendingImport, setPendingImport] = useState<{ draft: ResumeDraft; exportedAt: string; fileName: string } | null>(null);
-  const [activeTab, setActiveTab] = useState("profile");
+  const [activeTab, setActiveTab] = useState(incomingFeedback.feedback ? "project" : "profile");
   const [template, setTemplate] = useState("modern");
   const [optimizing, setOptimizing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [optimization, setOptimization] = useState<Optimization | null>(null);
-  const [careerFeedback, setCareerFeedback] = useState<CareerFeedback | null>(null);
-  const [notice, setNotice] = useState("");
+  const [careerFeedback, setCareerFeedback] = useState<CareerFeedback | null>(incomingFeedback.feedback);
+  const [notice, setNotice] = useState(incomingFeedback.notice);
 
   const applyDraft = (next: ResumeDraft) => {
     draftRef.current = next;
@@ -121,34 +169,10 @@ export default function Home() {
   };
 
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(DRAFT_STORAGE_KEY);
-      if (stored) {
-        const restored = { ...initialDraft, ...(JSON.parse(stored) as Partial<ResumeDraft>) };
-        draftRef.current = restored;
-        setDraft(restored);
-      }
-    } catch {
-      setSaveError(true);
-    } finally {
-      setLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    const prefix = "#career-feedback=";
-    if (!window.location.hash.startsWith(prefix)) return;
-    try {
-      const feedback = JSON.parse(decodeURIComponent(window.location.hash.slice(prefix.length))) as CareerFeedback;
-      if (feedback.source !== "echohire" || !Array.isArray(feedback.improvements)) throw new Error("invalid feedback");
-      setCareerFeedback(feedback);
-      setActiveTab("project");
-      setNotice("EchoHire 面试反馈已导入，可据此修改简历");
+    if (incomingFeedback.feedback && incomingFeedback.hasHash) {
       window.history.replaceState(null, "", window.location.pathname);
-    } catch {
-      setNotice("EchoHire 反馈无法读取，请返回面试报告重新操作");
     }
-  }, []);
+  }, [incomingFeedback]);
 
   useEffect(() => {
     const context = (document as Document & { modelContext?: { registerTool: (tool: Record<string, unknown>, options?: { signal?: AbortSignal }) => void | Promise<void> } }).modelContext;
@@ -263,6 +287,8 @@ export default function Home() {
       },
       jobDescription: draft.jobDescription,
     };
+    // EchoHire is a separate site, so this must be a full cross-origin navigation.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
     window.location.href = `${ECHOHIRE_URL}#setup?handoff=${encodeURIComponent(JSON.stringify(payload))}`;
   };
 
@@ -428,7 +454,7 @@ export default function Home() {
             <Button variant="outline" className="ai-button" onClick={optimizeCurrent} disabled={optimizing}>{optimizing ? <LoaderCircle className="spin" /> : <Sparkles />}{optimizing ? "正在检查" : "检查当前内容"}</Button>
           </div>
 
-          <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setOptimization(null); }} className="editor-tabs">
+          <Tabs value={activeTab} onValueChange={(value: string) => { setActiveTab(value); setOptimization(null); }} className="editor-tabs">
             <TabsList variant="line" className="tab-list">
               <TabsTrigger value="profile">个人资料</TabsTrigger>
               <TabsTrigger value="experience">经历</TabsTrigger>
@@ -527,6 +553,8 @@ export default function Home() {
             {remainingSamples.length > 0 && <div className="sample-document-note">演示资料 · 仍有示例内容，请核对后使用</div>}
             <header className="resume-header">
               <div className="resume-identity"><h2>{draft.name || "你的姓名"}</h2><p>{draft.title || "目标职位"}</p><div><span>{draft.email}</span><span>{draft.phone}</span><span>{draft.city}</span></div></div>
+              {/* A local data URL must remain available to html2canvas during PDF export. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               {draft.avatar && <img className="resume-avatar" src={draft.avatar} alt={`${draft.name || "求职者"}的头像`} />}
             </header>
             <ResumeSection title="个人简介"><p>{draft.summary}</p></ResumeSection>
@@ -600,6 +628,8 @@ function AvatarUpload({ value, onChange, onNotice }: { value: string; onChange: 
   return (
     <div className="avatar-field">
       <div className={`avatar-preview ${value ? "has-image" : ""}`}>
+        {/* The cropped avatar is held as a browser-local data URL. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         {value ? <img src={value} alt="头像预览" /> : <Camera aria-hidden="true" />}
       </div>
       <div className="avatar-copy">

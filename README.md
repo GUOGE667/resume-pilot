@@ -34,6 +34,10 @@ pnpm dev
 
 本地运行默认无需 API Key。若所有者将来决定启用付费模型，再同时配置 `RESUMEPILOT_ALLOW_PAID_API=true` 与自己的 `OPENAI_API_KEY`；不要将真实密钥提交到 Git。运行 `pnpm lint`、`pnpm build` 检查源码。跨站闭环的人工验收步骤见 [EchoHire 作品集说明](https://github.com/GUOGE667/echohire-ai-interview/blob/main/docs/PORTFOLIO.md)。
 
+## 质量检查
+
+运行 `npm run lint`、`npm test` 和 `npm run build` 可检查静态规则、草稿备份与岗位对照等逻辑，以及生产构建。GitHub Actions 的 `CI` 工作流会在推送到 `main` 或提交 PR 时运行同一组检查，不需要 OpenAI API Key。
+
 ## 说明
 
 默认简历是虚构示例，不是作者的真实履历。页面和含示例内容的 PDF 预览会显示提示，可一键清空完整示例。项目用于学习和作品集展示。
