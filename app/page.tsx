@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
   BriefcaseBusiness,
@@ -67,6 +67,7 @@ type CareerFeedback = {
 };
 
 const ECHOHIRE_URL = "https://echohire-ai-interview.guolinghao6.chatgpt.site/";
+const DRAFT_STORAGE_KEY = "resumepilot-draft";
 
 const initialDraft: ResumeDraft = {
   avatar: "",
@@ -85,16 +86,40 @@ const initialDraft: ResumeDraft = {
   experience: "参与核心业务页面开发；与产品和设计协作完成需求交付；优化移动端交互体验。",
   project: "EchoHire AI 模拟面试平台",
   projectRole: "独立开发者",
-  projectDetail: "使用 Next.js、TypeScript 与 OpenAI API 构建个性化模拟面试流程，完成简历上传、问题生成、回答分析与 Vercel 部署。",
-  skills: "TypeScript, React, Next.js, Tailwind CSS, Git, OpenAI API",
+  projectDetail: "使用 Next.js 和 TypeScript 搭建岗位问答、逐题追问与规则复盘流程，支持访客免登录练习和本地记录。",
+  skills: "TypeScript, React, Next.js, Tailwind CSS, Git",
   jobDescription: "招聘前端开发实习生，熟悉 React、TypeScript，具备良好的产品意识和团队协作能力。",
 };
+
+const sampleFields: Array<{ key: keyof ResumeDraft; label: string }> = [
+  { key: "name", label: "姓名" },
+  { key: "email", label: "邮箱" },
+  { key: "phone", label: "手机" },
+  { key: "school", label: "学校" },
+  { key: "company", label: "公司" },
+  { key: "experience", label: "实习内容" },
+  { key: "projectDetail", label: "项目描述" },
+];
+
+const emptyDraft = Object.fromEntries(Object.keys(initialDraft).map((key) => [key, ""])) as ResumeDraft;
+
+function persistDraft(value: ResumeDraft): boolean {
+  try {
+    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const splitLines = (value: string) => value.split(/[；;\n]/).map((item) => item.trim()).filter(Boolean);
 
 export default function Home() {
   const [draft, setDraft] = useState(initialDraft);
+  const draftRef = useRef(initialDraft);
   const [saved, setSaved] = useState(true);
+  const [saveError, setSaveError] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState("profile");
   const [template, setTemplate] = useState("modern");
   const [optimizing, setOptimizing] = useState(false);
@@ -103,10 +128,27 @@ export default function Home() {
   const [careerFeedback, setCareerFeedback] = useState<CareerFeedback | null>(null);
   const [notice, setNotice] = useState("");
 
+  const applyDraft = (next: ResumeDraft) => {
+    draftRef.current = next;
+    setDraft(next);
+    const success = persistDraft(next);
+    setSaved(success);
+    setSaveError(!success);
+  };
+
   useEffect(() => {
-    const stored = localStorage.getItem("resumepilot-draft");
-    if (!stored) return;
-    try { setDraft({ ...initialDraft, ...(JSON.parse(stored) as Partial<ResumeDraft>) }); } catch { localStorage.removeItem("resumepilot-draft"); }
+    try {
+      const stored = localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (stored) {
+        const restored = { ...initialDraft, ...(JSON.parse(stored) as Partial<ResumeDraft>) };
+        draftRef.current = restored;
+        setDraft(restored);
+      }
+    } catch {
+      setSaveError(true);
+    } finally {
+      setLoaded(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -145,8 +187,7 @@ export default function Home() {
         if (Object.keys(raw).some((key) => !allowed.includes(key))) throw new TypeError("包含不支持的字段。");
         if (allowed.some((key) => raw[key] !== undefined && typeof raw[key] !== "string")) throw new TypeError("所有字段都必须是文本。");
         const values = raw as Partial<Pick<ResumeDraft, "name" | "title" | "summary">>;
-        setDraft((current) => ({ ...current, ...values }));
-        setSaved(false);
+        applyDraft({ ...draftRef.current, ...values });
         setActiveTab("profile");
         return { updated: Object.keys(values), section: "profile" };
       },
@@ -155,15 +196,22 @@ export default function Home() {
   }, []);
 
   const update = (field: keyof ResumeDraft, value: string) => {
-    setDraft((current) => ({ ...current, [field]: value }));
-    setSaved(false);
+    applyDraft({ ...draftRef.current, [field]: value });
   };
 
   const saveDraft = () => {
-    localStorage.setItem("resumepilot-draft", JSON.stringify(draft));
-    setSaved(true);
-    setNotice("草稿已保存在当前浏览器");
+    const success = persistDraft(draftRef.current);
+    setSaved(success);
+    setSaveError(!success);
+    setNotice(success ? "草稿已保存在当前浏览器" : "保存失败：请检查浏览器存储空间或隐私设置");
     window.setTimeout(() => setNotice(""), 2400);
+  };
+
+  const clearExample = () => {
+    applyDraft({ ...emptyDraft });
+    setActiveTab("profile");
+    setOptimization(null);
+    setNotice("示例已清空，请填写自己的真实经历");
   };
 
   const startInterview = () => {
@@ -270,9 +318,8 @@ export default function Home() {
   };
 
   const score = useMemo(() => {
-    const filled = Object.values(draft).filter((value) => value.trim().length > 8).length;
-    const hasMetrics = /\d+%|提升|降低|增长|用户/.test(draft.experience + draft.projectDetail);
-    return Math.min(94, 58 + filled * 2 + (hasMetrics ? 8 : 0));
+    const fields: Array<keyof ResumeDraft> = ["name", "title", "email", "phone", "city", "summary", "school", "degree", "project", "projectDetail", "skills"];
+    return Math.round(fields.filter((field) => draft[field].trim()).length / fields.length * 100);
   }, [draft]);
 
   const jobRequirements = useMemo(() => analyzeJobRequirements(draft.jobDescription, [
@@ -284,6 +331,10 @@ export default function Home() {
     { section: "专业技能", excerpt: draft.skills },
   ]), [draft]);
   const mentionedCount = jobRequirements.filter((item) => item.evidence).length;
+  const remainingSamples = sampleFields.filter(({ key }) => draft[key] === initialDraft[key]).map(({ label }) => label);
+  const pristineExample = (Object.keys(initialDraft) as Array<keyof ResumeDraft>).every((key) => draft[key] === initialDraft[key]);
+
+  if (!loaded) return <main className="draft-loading" role="status">正在读取当前浏览器中的草稿…</main>;
 
   return (
     <main className="app-shell">
@@ -293,8 +344,8 @@ export default function Home() {
           <span>ResumePilot</span>
         </a>
         <div className="document-status">
-          <span className={saved ? "status-dot saved" : "status-dot"} />
-          {saved ? "所有修改已保存" : "有未保存的修改"}
+          <span className={saveError ? "status-dot error" : saved ? "status-dot saved" : "status-dot"} />
+          {saveError ? "本地保存失败" : pristineExample ? "虚构演示样本" : saved ? "已保存在当前浏览器" : "有未保存的修改"}
         </div>
         <div className="top-actions">
           <Button variant="ghost" onClick={saveDraft}><Save />保存</Button>
@@ -305,7 +356,7 @@ export default function Home() {
       <section className="workspace" id="top">
         <aside className="section-rail">
           <div className="rail-heading">
-            <span>简历完成度</span>
+            <span>简历填写进度</span>
             <strong>{score}%</strong>
           </div>
           <Progress value={score} className="completion-progress" />
@@ -319,11 +370,16 @@ export default function Home() {
           <a className="career-route-link" href={`${ECHOHIRE_URL}#career`}>查看职业路线 <ArrowUpRight size={16} /></a>
           <div className="privacy-note">
             <strong>本地私有保存</strong>
-            <p>简历草稿保存在当前浏览器，不会公开展示。“检查当前内容”使用免费规则，不调用付费模型。</p>
+            <p>修改后自动保存在当前浏览器；清除浏览器数据会丢失草稿。“检查当前内容”使用免费规则，不调用付费模型。</p>
           </div>
         </aside>
 
         <section className="editor-panel">
+          {saveError && <div className="save-error-banner" role="alert">草稿未能保存到当前浏览器。请检查存储权限或空间，再点击顶部“保存”重试。</div>}
+          {remainingSamples.length > 0 && <div className="sample-banner" role="status">
+            <div><strong>{pristineExample ? "这是一份虚构的演示简历" : "简历中仍有示例内容"}</strong><p>请核对并替换：{remainingSamples.join("、")}。导出 PDF 前确认这些内容属于你本人。</p></div>
+            {pristineExample && <Button variant="outline" onClick={clearExample}>清空示例，开始填写</Button>}
+          </div>}
           <div className="editor-heading">
             <div><span className="eyebrow">Resume editor · 01</span><h1>把经历写成证据</h1><p className="editor-deck">清楚、具体、可信。让每一段内容都经得起招聘者追问。</p></div>
             <Button variant="outline" className="ai-button" onClick={optimizeCurrent} disabled={optimizing}>{optimizing ? <LoaderCircle className="spin" /> : <Sparkles />}{optimizing ? "正在检查" : "检查当前内容"}</Button>
@@ -425,6 +481,7 @@ export default function Home() {
         <aside className="preview-panel">
           <div className="preview-toolbar"><div><span className="eyebrow">实时预览</span><strong>{template === "modern" ? "现代单栏" : "经典商务"}</strong></div><Select value={template} onValueChange={setTemplate}><SelectTrigger aria-label="选择简历模板"><LayoutTemplate /><SelectValue /></SelectTrigger><SelectContent><SelectItem value="modern">现代单栏</SelectItem><SelectItem value="classic">经典商务</SelectItem></SelectContent></Select></div>
           <article className={`resume-paper ${template}`}>
+            {remainingSamples.length > 0 && <div className="sample-document-note">演示资料 · 仍有示例内容，请核对后使用</div>}
             <header className="resume-header">
               <div className="resume-identity"><h2>{draft.name || "你的姓名"}</h2><p>{draft.title || "目标职位"}</p><div><span>{draft.email}</span><span>{draft.phone}</span><span>{draft.city}</span></div></div>
               {draft.avatar && <img className="resume-avatar" src={draft.avatar} alt={`${draft.name || "求职者"}的头像`} />}
