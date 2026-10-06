@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
   BriefcaseBusiness,
@@ -23,28 +23,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { analyzeJobRequirements } from "@/lib/job-match";
-
-type ResumeDraft = {
-  avatar: string;
-  name: string;
-  title: string;
-  email: string;
-  phone: string;
-  city: string;
-  summary: string;
-  school: string;
-  degree: string;
-  educationDate: string;
-  company: string;
-  role: string;
-  experienceDate: string;
-  experience: string;
-  project: string;
-  projectRole: string;
-  projectDetail: string;
-  skills: string;
-  jobDescription: string;
-};
+import { createResumeBackup, DRAFT_FIELDS, MAX_BACKUP_BYTES, parseResumeBackup, type ResumeDraft } from "@/lib/resume-backup";
 
 type Optimization = {
   headline: string;
@@ -101,7 +80,7 @@ const sampleFields: Array<{ key: keyof ResumeDraft; label: string }> = [
   { key: "projectDetail", label: "项目描述" },
 ];
 
-const emptyDraft = Object.fromEntries(Object.keys(initialDraft).map((key) => [key, ""])) as ResumeDraft;
+const emptyDraft = Object.fromEntries(DRAFT_FIELDS.map((key) => [key, ""])) as ResumeDraft;
 
 function persistDraft(value: ResumeDraft): boolean {
   try {
@@ -117,9 +96,12 @@ const splitLines = (value: string) => value.split(/[；;\n]/).map((item) => item
 export default function Home() {
   const [draft, setDraft] = useState(initialDraft);
   const draftRef = useRef(initialDraft);
+  const backupInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(true);
   const [saveError, setSaveError] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [backupError, setBackupError] = useState("");
+  const [pendingImport, setPendingImport] = useState<{ draft: ResumeDraft; exportedAt: string; fileName: string } | null>(null);
   const [activeTab, setActiveTab] = useState("profile");
   const [template, setTemplate] = useState("modern");
   const [optimizing, setOptimizing] = useState(false);
@@ -134,6 +116,7 @@ export default function Home() {
     const success = persistDraft(next);
     setSaved(success);
     setSaveError(!success);
+    return success;
   };
 
   useEffect(() => {
@@ -212,6 +195,49 @@ export default function Home() {
     setActiveTab("profile");
     setOptimization(null);
     setNotice("示例已清空，请填写自己的真实经历");
+  };
+
+  const downloadBackup = () => {
+    setBackupError("");
+    try {
+      const blob = new Blob([createResumeBackup(draftRef.current)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `ResumePilot-草稿-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setNotice("草稿备份已下载，请妥善保管文件");
+    } catch {
+      setBackupError("备份下载失败，请重试");
+    }
+  };
+
+  const selectBackup = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setBackupError("");
+    setPendingImport(null);
+    if (file.size > MAX_BACKUP_BYTES) {
+      setBackupError("备份文件不能超过 12 MB");
+      return;
+    }
+    try {
+      const parsed = parseResumeBackup(await file.text());
+      setPendingImport({ ...parsed, fileName: file.name });
+    } catch (error) {
+      setBackupError(error instanceof Error ? error.message : "无法读取此备份文件");
+    }
+  };
+
+  const restoreBackup = () => {
+    if (!pendingImport) return;
+    const success = applyDraft(pendingImport.draft);
+    setPendingImport(null);
+    setActiveTab("profile");
+    setOptimization(null);
+    setNotice(success ? "草稿已恢复并保存在当前浏览器" : "草稿已载入，但浏览器保存失败；请先保留备份文件");
   };
 
   const startInterview = () => {
@@ -380,6 +406,25 @@ export default function Home() {
             <div><strong>{pristineExample ? "这是一份虚构的演示简历" : "简历中仍有示例内容"}</strong><p>请核对并替换：{remainingSamples.join("、")}。导出 PDF 前确认这些内容属于你本人。</p></div>
             {pristineExample && <Button variant="outline" onClick={clearExample}>清空示例，开始填写</Button>}
           </div>}
+          <details className="backup-panel">
+            <summary>草稿备份与恢复</summary>
+            <div className="backup-panel-body">
+              <p>下载 JSON 备份可在其他设备恢复。文件包含你填写的简历资料，请自行妥善保管；导入会覆盖当前浏览器中的草稿。</p>
+              <div className="backup-actions">
+                <Button variant="outline" onClick={downloadBackup}>下载备份</Button>
+                <Button variant="outline" onClick={() => backupInputRef.current?.click()}>导入备份</Button>
+                <input ref={backupInputRef} className="backup-file-input" type="file" accept=".json,application/json" onChange={selectBackup} aria-label="选择 ResumePilot 草稿备份文件" />
+              </div>
+              {backupError && <p className="backup-error" role="alert">{backupError}</p>}
+              {pendingImport && <div className="backup-preview">
+                <strong>确认恢复此备份？</strong>
+                <p>文件：{pendingImport.fileName} · 备份时间：{new Date(pendingImport.exportedAt).toLocaleString("zh-CN")}</p>
+                <p>姓名：{pendingImport.draft.name || "未填写"} · 项目：{pendingImport.draft.project || "未填写"}</p>
+                <p>导入后会替换当前草稿。建议先下载当前草稿的备份。</p>
+                <div className="backup-actions"><Button onClick={restoreBackup}>覆盖并恢复</Button><Button variant="ghost" onClick={() => setPendingImport(null)}>取消</Button></div>
+              </div>}
+            </div>
+          </details>
           <div className="editor-heading">
             <div><span className="eyebrow">Resume editor · 01</span><h1>把经历写成证据</h1><p className="editor-deck">清楚、具体、可信。让每一段内容都经得起招聘者追问。</p></div>
             <Button variant="outline" className="ai-button" onClick={optimizeCurrent} disabled={optimizing}>{optimizing ? <LoaderCircle className="spin" /> : <Sparkles />}{optimizing ? "正在检查" : "检查当前内容"}</Button>
