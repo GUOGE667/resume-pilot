@@ -308,7 +308,7 @@ export default function Home() {
           <a className="career-route-link" href={`${ECHOHIRE_URL}#career`}>查看职业路线 <ArrowUpRight size={16} /></a>
           <div className="privacy-note">
             <strong>本地私有保存</strong>
-            <p>简历草稿保存在当前浏览器，不会公开展示。</p>
+            <p>简历草稿保存在当前浏览器，不会公开展示。“检查当前内容”使用免费规则，不调用付费模型。</p>
           </div>
         </aside>
 

@@ -58,6 +58,11 @@ export async function POST(request: Request) {
     safeJobDescription = jobDescription;
     if (content.length < 10) return Response.json({ error: "请至少填写 10 个字后再进行优化。" }, { status: 400 });
 
+    // The public editor must not charge the owner's API account by default.
+    // A configured key alone never enables paid requests.
+    if (env.RESUMEPILOT_ALLOW_PAID_API !== "true") {
+      return Response.json(fallback(content, jobDescription));
+    }
     const apiKey = env.OPENAI_API_KEY;
     if (!apiKey) return Response.json(fallback(content, jobDescription));
 

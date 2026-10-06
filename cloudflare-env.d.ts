@@ -4,5 +4,6 @@ declare namespace Cloudflare {
     BUCKET?: R2Bucket;
     OPENAI_API_KEY?: string;
     OPENAI_MODEL?: string;
+    RESUMEPILOT_ALLOW_PAID_API?: string;
   }
 }
