@@ -23,6 +23,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { analyzeJobRequirements } from "@/lib/job-match";
+import { collectPageBreakpoints, planPageSlices } from "@/lib/pdf-pagination";
 import { createResumeBackup, DRAFT_FIELDS, MAX_BACKUP_BYTES, parseResumeBackup, type ResumeDraft } from "@/lib/resume-backup";
 
 type Optimization = {
@@ -313,11 +314,10 @@ export default function Home() {
       const pageWidth = pdf.internal.pageSize.getWidth() - margin * 2;
       const pageHeight = pdf.internal.pageSize.getHeight() - margin * 2;
       const sliceHeight = Math.floor(canvas.width * pageHeight / pageWidth);
-      let offset = 0;
-      let pageIndex = 0;
+      const slices = planPageSlices(canvas.height, sliceHeight, collectPageBreakpoints(paper, canvas.height));
 
-      while (offset < canvas.height) {
-        const currentHeight = Math.min(sliceHeight, canvas.height - offset);
+      for (const [pageIndex, slice] of slices.entries()) {
+        const currentHeight = slice.end - slice.start;
         const pageCanvas = document.createElement("canvas");
         pageCanvas.width = canvas.width;
         pageCanvas.height = currentHeight;
@@ -325,17 +325,15 @@ export default function Home() {
         if (!context) throw new Error("无法创建 PDF 画布");
         context.fillStyle = "#fffefa";
         context.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-        context.drawImage(canvas, 0, offset, canvas.width, currentHeight, 0, 0, canvas.width, currentHeight);
+        context.drawImage(canvas, 0, slice.start, canvas.width, currentHeight, 0, 0, canvas.width, currentHeight);
         if (pageIndex > 0) pdf.addPage();
         const renderedHeight = currentHeight * pageWidth / canvas.width;
         pdf.addImage(pageCanvas.toDataURL("image/jpeg", 0.96), "JPEG", margin, margin, pageWidth, renderedHeight, undefined, "FAST");
-        offset += currentHeight;
-        pageIndex += 1;
       }
 
       const safeName = (draft.name.trim() || "ResumePilot").replace(/[\\/:*?"<>|]/g, "-");
       pdf.save(`${safeName}-简历.pdf`);
-      setNotice("PDF 已生成并开始下载");
+      setNotice(`PDF 已生成（${slices.length} 页）并开始下载`);
     } catch (error) {
       setNotice(error instanceof Error ? `PDF 导出失败：${error.message}` : "PDF 导出失败，请重试");
     } finally {
