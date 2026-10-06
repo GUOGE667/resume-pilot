@@ -128,9 +128,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .add-row { width: max-content; display: inline-flex; align-items: center; gap: 7px; border: 0; padding: 5px 0; color: #155eef; background: transparent; cursor: pointer; font-size: .78rem; font-weight: 700; }
 .add-row svg { width: 15px; }
 .match-card { display: grid; gap: 13px; padding: 18px; border: 1px solid #adb8b0; border-left: 3px solid #273f37; border-radius: 0; background: #f2f3ed; }
-.match-card > div { display: flex; justify-content: space-between; color: #344054; font-size: .8rem; }
-.match-card strong { color: #273f37; font-size: 1.15rem; }
+.match-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; color: #344054; font-size: .8rem; }
+.match-heading strong { color: #273f37; font-size: .85rem; }
 .match-card p { margin: 0; color: #475467; font-size: .76rem; line-height: 1.55; }
+.requirement-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.requirement-list li { display: grid; gap: 5px; padding: 11px 12px; border: 1px solid #d4ddd5; background: #fffefa; }
+.requirement-list li.unmentioned { border-color: #e2d1c2; background: #faf6f0; }
+.requirement-title { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; align-items: baseline; }
+.requirement-title strong { color: #263b32; font-size: .8rem; }
+.requirement-title span { color: #496b55; font-size: .69rem; font-weight: 700; }
+.unmentioned .requirement-title span { color: #986242; }
+.match-card .requirement-jd { color: #667085; }
+.match-card .match-disclaimer { border-top: 1px solid #d1d8d1; padding-top: 10px; color: #68776e; font-size: .69rem; }
 .interview-handoff { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 20px; padding: 20px; border: 1px solid #9eaaa2; background: #edf1ed; }
 .interview-handoff strong { color: #273f37; font-family: Georgia, "Noto Serif SC", serif; font-size: .92rem; }
 .interview-handoff p { max-width: 520px; margin: 6px 0 0; color: #667085; font-size: .73rem; line-height: 1.55; }

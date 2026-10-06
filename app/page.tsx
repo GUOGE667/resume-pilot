@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { analyzeJobRequirements } from "@/lib/job-match";
 
 type ResumeDraft = {
   avatar: string;
@@ -274,6 +275,16 @@ export default function Home() {
     return Math.min(94, 58 + filled * 2 + (hasMetrics ? 8 : 0));
   }, [draft]);
 
+  const jobRequirements = useMemo(() => analyzeJobRequirements(draft.jobDescription, [
+    { section: "求职方向", excerpt: draft.title },
+    { section: "个人简介", excerpt: draft.summary },
+    { section: "教育经历", excerpt: `${draft.school} ${draft.degree}` },
+    { section: "实习经历", excerpt: `${draft.company} ${draft.role} ${draft.experience}` },
+    { section: "项目经历", excerpt: `${draft.project} ${draft.projectRole} ${draft.projectDetail}` },
+    { section: "专业技能", excerpt: draft.skills },
+  ]), [draft]);
+  const mentionedCount = jobRequirements.filter((item) => item.evidence).length;
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -377,9 +388,17 @@ export default function Home() {
               <FormSection id="target" index="05" title="目标岗位" description="粘贴职位描述，检查简历与岗位的匹配情况。">
                 <Field label="职位 JD" value={draft.jobDescription} multiline onChange={(value) => update("jobDescription", value)} />
                 <div className="match-card">
-                  <div><span>当前匹配度</span><strong>{score}%</strong></div>
-                  <Progress value={score} />
-                  <p>已识别 React、TypeScript、产品意识和团队协作。建议再补充一条带量化结果的项目成果。</p>
+                  <div className="match-heading"><span>岗位关键词对照</span><strong>{jobRequirements.length ? `${mentionedCount}/${jobRequirements.length} 项有提及` : "等待 JD"}</strong></div>
+                  {!draft.jobDescription.trim() ? <p>粘贴职位 JD 后，这里会列出可识别的要求及简历原文。</p>
+                    : jobRequirements.length === 0 ? <p>暂未识别出可对照的岗位关键词。请直接阅读 JD，并检查简历是否提供了相应经历。</p>
+                    : <ul className="requirement-list">
+                        {jobRequirements.map((item) => <li key={item.label} className={item.evidence ? "mentioned" : "unmentioned"}>
+                          <div className="requirement-title"><strong>{item.label}</strong><span>{item.evidence ? "简历有提及" : "简历未找到"}</span></div>
+                          <p className="requirement-jd">JD：{item.jdExcerpt}</p>
+                          <p>{item.evidence ? `${item.evidence.section}：${item.evidence.excerpt}` : "可以补充真实经历或技能；没有相关经历时无需硬写。"}</p>
+                        </li>)}
+                      </ul>}
+                  <p className="match-disclaimer">仅对照文字提及情况，不能验证能力，也不代表录用概率。最多展示 12 项可识别关键词。</p>
                 </div>
                 <div className="interview-handoff">
                   <div><strong>用当前简历检验真实表达</strong><p>将简历正文和职位 JD 带入 EchoHire，自动生成针对性问题。头像和联系方式不会传递。</p></div>
