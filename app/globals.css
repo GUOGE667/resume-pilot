@@ -152,6 +152,15 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .avatar-remove-button:hover { background: #f7ece8; }
 .add-row { width: max-content; display: inline-flex; align-items: center; gap: 7px; border: 0; padding: 5px 0; color: #155eef; background: transparent; cursor: pointer; font-size: .78rem; font-weight: 700; }
 .add-row svg { width: 15px; }
+.add-row:disabled { opacity: .5; cursor: not-allowed; }
+.entry-editor { display: grid; gap: 16px; border: 1px solid #dedbd2; padding: 17px; background: #faf9f5; }
+.entry-editor.selected { border-color: #91a299; background: #f8faf6; }
+.entry-editor-heading, .entry-editor-heading > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.entry-editor-heading strong { color: #273f37; font-size: .78rem; }
+.entry-editor-heading button { display: inline-flex; align-items: center; gap: 5px; border: 0; padding: 4px 0; color: #8d3f30; background: transparent; cursor: pointer; font-size: .72rem; font-weight: 700; }
+.entry-editor-heading .entry-select { color: #31594b; }
+.entry-editor-heading .entry-select[aria-pressed="true"] { text-decoration: underline; text-underline-offset: 3px; }
+.entry-editor-heading button:focus-visible, .add-row:focus-visible { outline: 3px solid rgba(83,109,99,.25); outline-offset: 3px; }
 .match-card { display: grid; gap: 13px; padding: 18px; border: 1px solid #adb8b0; border-left: 3px solid #273f37; border-radius: 0; background: #f2f3ed; }
 .match-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; color: #344054; font-size: .8rem; }
 .match-heading strong { color: #273f37; font-size: .85rem; }
@@ -229,6 +238,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .entry-title strong { color: #1d2939; font-size: .76rem; }
 .entry-title span { color: #667085; font-size: .65rem; }
 .resume-entry em { display: block; margin-top: 3px; color: #566b62; font-size: .67rem; font-style: normal; font-weight: 650; }
+.resume-entry + .resume-entry { margin-top: 14px; }
 .resume-entry ul { margin: 8px 0 0; padding-left: 16px; }
 .skill-pills { display: flex; flex-wrap: wrap; gap: 6px; }
 .skill-pills span { padding: 3px 0; border-bottom: 1px solid #bdc6c0; border-radius: 0; color: #273f37; background: transparent; font-size: .62rem; font-weight: 650; }

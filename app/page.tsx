@@ -11,6 +11,7 @@ import {
   GraduationCap,
   LayoutTemplate,
   LoaderCircle,
+  Plus,
   Save,
   Sparkles,
   Target,
@@ -25,7 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { analyzeJobRequirements } from "@/lib/job-match";
 import { collectPageBreakpoints, planPageSlices } from "@/lib/pdf-pagination";
-import { createResumeBackup, DRAFT_FIELDS, MAX_BACKUP_BYTES, parseResumeBackup, type ResumeDraft } from "@/lib/resume-backup";
+import { createResumeBackup, DRAFT_FIELDS, MAX_BACKUP_BYTES, MAX_ENTRIES, parseResumeBackup, parseResumeDraft, type DraftTextField, type ResumeDraft } from "@/lib/resume-backup";
 
 type Optimization = {
   headline: string;
@@ -58,31 +59,29 @@ const initialDraft: ResumeDraft = {
   phone: "138 0000 0000",
   city: "中国 · 深圳",
   summary: "关注用户体验与工程质量的前端开发者，能够独立完成从需求拆解、界面实现到部署上线的完整流程。",
-  school: "示例大学",
-  degree: "计算机科学 · 本科",
-  educationDate: "2023 — 2027",
-  company: "示例科技有限公司",
-  role: "前端开发实习生",
-  experienceDate: "2025.06 — 2025.09",
-  experience: "参与核心业务页面开发；与产品和设计协作完成需求交付；优化移动端交互体验。",
-  project: "EchoHire AI 模拟面试平台",
-  projectRole: "独立开发者",
-  projectDetail: "使用 Next.js 和 TypeScript 搭建岗位问答、逐题追问与规则复盘流程，支持访客免登录练习和本地记录。",
+  educations: [{ school: "示例大学", degree: "计算机科学 · 本科", date: "2023 — 2027" }],
+  experiences: [{ company: "示例科技有限公司", role: "前端开发实习生", date: "2025.06 — 2025.09", description: "参与核心业务页面开发；与产品和设计协作完成需求交付；优化移动端交互体验。" }],
+  projects: [{ name: "EchoHire AI 模拟面试平台", role: "独立开发者", description: "使用 Next.js 和 TypeScript 搭建岗位问答、逐题追问与规则复盘流程，支持访客免登录练习和本地记录。" }],
   skills: "TypeScript, React, Next.js, Tailwind CSS, Git",
   jobDescription: "招聘前端开发实习生，熟悉 React、TypeScript，具备良好的产品意识和团队协作能力。",
 };
 
-const sampleFields: Array<{ key: keyof ResumeDraft; label: string }> = [
-  { key: "name", label: "姓名" },
-  { key: "email", label: "邮箱" },
-  { key: "phone", label: "手机" },
-  { key: "school", label: "学校" },
-  { key: "company", label: "公司" },
-  { key: "experience", label: "实习内容" },
-  { key: "projectDetail", label: "项目描述" },
+const sampleFields: Array<{ label: string; matches: (draft: ResumeDraft) => boolean }> = [
+  { label: "姓名", matches: (draft) => draft.name === initialDraft.name },
+  { label: "邮箱", matches: (draft) => draft.email === initialDraft.email },
+  { label: "手机", matches: (draft) => draft.phone === initialDraft.phone },
+  { label: "学校", matches: (draft) => draft.educations.some((entry) => entry.school === initialDraft.educations[0].school) },
+  { label: "公司", matches: (draft) => draft.experiences.some((entry) => entry.company === initialDraft.experiences[0].company) },
+  { label: "实习内容", matches: (draft) => draft.experiences.some((entry) => entry.description === initialDraft.experiences[0].description) },
+  { label: "项目描述", matches: (draft) => draft.projects.some((entry) => entry.description === initialDraft.projects[0].description) },
 ];
 
-const emptyDraft = Object.fromEntries(DRAFT_FIELDS.map((key) => [key, ""])) as ResumeDraft;
+const emptyDraft: ResumeDraft = {
+  ...Object.fromEntries(DRAFT_FIELDS.map((key) => [key, ""])) as Pick<ResumeDraft, DraftTextField>,
+  educations: [{ school: "", degree: "", date: "" }],
+  experiences: [{ company: "", role: "", date: "", description: "" }],
+  projects: [{ name: "", role: "", description: "" }],
+};
 
 const subscribeToHydration = () => () => {};
 const getClientSnapshot = () => true;
@@ -93,17 +92,7 @@ function readStoredDraft(): { value: ResumeDraft; error: boolean } {
   try {
     const stored = localStorage.getItem(DRAFT_STORAGE_KEY);
     if (!stored) return { value: initialDraft, error: false };
-    const parsed: unknown = JSON.parse(stored);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("invalid draft");
-    const fields = parsed as Record<string, unknown>;
-    const value = { ...initialDraft };
-    for (const field of DRAFT_FIELDS) {
-      if (fields[field] !== undefined) {
-        if (typeof fields[field] !== "string") throw new Error("invalid draft field");
-        value[field] = fields[field];
-      }
-    }
-    return { value, error: false };
+    return { value: parseResumeDraft(JSON.parse(stored)), error: false };
   } catch {
     return { value: initialDraft, error: true };
   }
@@ -157,12 +146,17 @@ export default function Home() {
   const [optimizing, setOptimizing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [optimization, setOptimization] = useState<Optimization | null>(null);
+  const [optimizationTarget, setOptimizationTarget] = useState<{ section: string; index: number; original: string } | null>(null);
+  const [selectedExperience, setSelectedExperience] = useState(0);
+  const [selectedProject, setSelectedProject] = useState(0);
   const [careerFeedback, setCareerFeedback] = useState<CareerFeedback | null>(incomingFeedback.feedback);
   const [notice, setNotice] = useState(incomingFeedback.notice);
 
   const applyDraft = (next: ResumeDraft) => {
     draftRef.current = next;
     setDraft(next);
+    setOptimization(null);
+    setOptimizationTarget(null);
     const success = persistDraft(next);
     setSaved(success);
     setSaveError(!success);
@@ -204,8 +198,33 @@ export default function Home() {
     return () => lifecycle.abort();
   }, []);
 
-  const update = (field: keyof ResumeDraft, value: string) => {
+  const update = (field: DraftTextField, value: string) => {
     applyDraft({ ...draftRef.current, [field]: value });
+  };
+
+  const updateEntry = <K extends "educations" | "experiences" | "projects">(kind: K, index: number, field: keyof ResumeDraft[K][number], value: string) => {
+    const entries = draftRef.current[kind].map((entry, position) => position === index ? { ...entry, [field]: value } : entry);
+    applyDraft({ ...draftRef.current, [kind]: entries });
+  };
+
+  const addEntry = (kind: "educations" | "experiences" | "projects") => {
+    if (draftRef.current[kind].length >= MAX_ENTRIES) {
+      setNotice(`每类最多添加 ${MAX_ENTRIES} 条`);
+      return;
+    }
+    const blank = kind === "educations" ? { school: "", degree: "", date: "" }
+      : kind === "experiences" ? { company: "", role: "", date: "", description: "" }
+      : { name: "", role: "", description: "" };
+    const index = draftRef.current[kind].length;
+    applyDraft({ ...draftRef.current, [kind]: [...draftRef.current[kind], blank] });
+    if (kind === "experiences") setSelectedExperience(index);
+    if (kind === "projects") setSelectedProject(index);
+  };
+
+  const removeEntry = (kind: "educations" | "experiences" | "projects", index: number) => {
+    applyDraft({ ...draftRef.current, [kind]: draftRef.current[kind].filter((_, position) => position !== index) });
+    if (kind === "experiences") setSelectedExperience((current) => Math.max(0, current > index ? current - 1 : Math.min(current, draftRef.current.experiences.length - 1)));
+    if (kind === "projects") setSelectedProject((current) => Math.max(0, current > index ? current - 1 : Math.min(current, draftRef.current.projects.length - 1)));
   };
 
   const saveDraft = () => {
@@ -218,6 +237,8 @@ export default function Home() {
 
   const clearExample = () => {
     applyDraft({ ...emptyDraft });
+    setSelectedExperience(0);
+    setSelectedProject(0);
     setActiveTab("profile");
     setOptimization(null);
     setNotice("示例已清空，请填写自己的真实经历");
@@ -262,6 +283,8 @@ export default function Home() {
     const success = applyDraft(pendingImport.draft);
     setPendingImport(null);
     setActiveTab("profile");
+    setSelectedExperience(0);
+    setSelectedProject(0);
     setOptimization(null);
     setNotice(success ? "草稿已恢复并保存在当前浏览器" : "草稿已载入，但浏览器保存失败；请先保留备份文件");
   };
@@ -276,14 +299,14 @@ export default function Home() {
         name: draft.name,
         title: draft.title,
         summary: draft.summary,
-        school: draft.school,
-        degree: draft.degree,
-        company: draft.company,
-        role: draft.role,
-        experience: draft.experience,
-        project: draft.project,
-        projectRole: draft.projectRole,
-        projectDetail: draft.projectDetail,
+        school: draft.educations.map((entry) => entry.school).filter(Boolean).join("；"),
+        degree: draft.educations.map((entry) => entry.degree).filter(Boolean).join("；"),
+        company: draft.experiences.map((entry) => entry.company).filter(Boolean).join("；"),
+        role: draft.experiences.map((entry) => entry.role).filter(Boolean).join("；"),
+        experience: draft.experiences.map((entry) => entry.description).filter(Boolean).join("；"),
+        project: draft.projects.map((entry) => entry.name).filter(Boolean).join("；"),
+        projectRole: draft.projects.map((entry) => entry.role).filter(Boolean).join("；"),
+        projectDetail: draft.projects.map((entry) => entry.description).filter(Boolean).join("；"),
         skills: draft.skills,
       },
       jobDescription: draft.jobDescription,
@@ -293,26 +316,37 @@ export default function Home() {
     window.location.href = `${ECHOHIRE_URL}#setup?handoff=${encodeURIComponent(JSON.stringify(payload))}`;
   };
 
-  const currentContent = activeTab === "experience" ? draft.experience : activeTab === "project" ? draft.projectDetail : activeTab === "target" ? draft.jobDescription : draft.summary;
+  const currentContent = activeTab === "experience" ? draft.experiences[selectedExperience]?.description ?? ""
+    : activeTab === "project" ? draft.projects[selectedProject]?.description ?? ""
+    : activeTab === "target" ? draft.jobDescription : draft.summary;
 
   const optimizeCurrent = async () => {
+    const target = { section: activeTab, index: activeTab === "experience" ? selectedExperience : selectedProject, original: currentContent };
     setOptimizing(true);
     setNotice("");
+    setOptimization(null);
+    setOptimizationTarget(null);
     try {
       const response = await fetch("/api/optimize", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ section: activeTab, content: currentContent, jobDescription: draft.jobDescription, title: draft.title }) });
       const result = await response.json() as Optimization & { error?: string };
       if (!response.ok) throw new Error(result.error || "优化失败，请重试。");
       setOptimization(result);
+      setOptimizationTarget(target);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "优化失败，请重试。");
     } finally { setOptimizing(false); }
   };
 
   const applyOptimization = () => {
-    if (!optimization || activeTab === "target") return;
-    const field = activeTab === "experience" ? "experience" : activeTab === "project" ? "projectDetail" : "summary";
-    update(field, optimization.optimizedText);
-    setOptimization(null);
+    if (!optimization || !optimizationTarget || activeTab === "target" || optimizationTarget.section !== activeTab || optimizationTarget.original !== currentContent ||
+      (activeTab === "experience" && (optimizationTarget.index !== selectedExperience || !draft.experiences[selectedExperience])) ||
+      (activeTab === "project" && (optimizationTarget.index !== selectedProject || !draft.projects[selectedProject]))) {
+      setNotice("当前内容已变化，请重新检查后再应用");
+      return;
+    }
+    if (activeTab === "experience") updateEntry("experiences", optimizationTarget.index, "description", optimization.optimizedText);
+    else if (activeTab === "project") updateEntry("projects", optimizationTarget.index, "description", optimization.optimizedText);
+    else update("summary", optimization.optimizedText);
     setNotice("优化内容已应用，可继续编辑");
   };
 
@@ -378,21 +412,28 @@ export default function Home() {
   };
 
   const score = useMemo(() => {
-    const fields: Array<keyof ResumeDraft> = ["name", "title", "email", "phone", "city", "summary", "school", "degree", "project", "projectDetail", "skills"];
-    return Math.round(fields.filter((field) => draft[field].trim()).length / fields.length * 100);
+    const fields = [draft.name, draft.title, draft.email, draft.phone, draft.city, draft.summary,
+      draft.educations.some((entry) => entry.school.trim()) ? "yes" : "",
+      draft.educations.some((entry) => entry.degree.trim()) ? "yes" : "",
+      draft.projects.some((entry) => entry.name.trim()) ? "yes" : "",
+      draft.projects.some((entry) => entry.description.trim()) ? "yes" : "", draft.skills];
+    return Math.round(fields.filter((value) => value.trim()).length / fields.length * 100);
   }, [draft]);
 
   const jobRequirements = useMemo(() => analyzeJobRequirements(draft.jobDescription, [
     { section: "求职方向", excerpt: draft.title },
     { section: "个人简介", excerpt: draft.summary },
-    { section: "教育经历", excerpt: `${draft.school} ${draft.degree}` },
-    { section: "实习经历", excerpt: `${draft.company} ${draft.role} ${draft.experience}` },
-    { section: "项目经历", excerpt: `${draft.project} ${draft.projectRole} ${draft.projectDetail}` },
+    ...draft.educations.map((entry, index) => ({ section: `教育经历 ${index + 1}`, excerpt: `${entry.school} ${entry.degree}` })),
+    ...draft.experiences.map((entry, index) => ({ section: `实习经历 ${index + 1}`, excerpt: `${entry.company} ${entry.role} ${entry.description}` })),
+    ...draft.projects.map((entry, index) => ({ section: `项目经历 ${index + 1}`, excerpt: `${entry.name} ${entry.role} ${entry.description}` })),
     { section: "专业技能", excerpt: draft.skills },
   ]), [draft]);
   const mentionedCount = jobRequirements.filter((item) => item.evidence).length;
-  const remainingSamples = sampleFields.filter(({ key }) => draft[key] === initialDraft[key]).map(({ label }) => label);
-  const pristineExample = (Object.keys(initialDraft) as Array<keyof ResumeDraft>).every((key) => draft[key] === initialDraft[key]);
+  const remainingSamples = sampleFields.filter(({ matches }) => matches(draft)).map(({ label }) => label);
+  const pristineExample = DRAFT_FIELDS.every((field) => draft[field] === initialDraft[field]) &&
+    JSON.stringify(draft.educations) === JSON.stringify(initialDraft.educations) &&
+    JSON.stringify(draft.experiences) === JSON.stringify(initialDraft.experiences) &&
+    JSON.stringify(draft.projects) === JSON.stringify(initialDraft.projects);
 
   if (!loaded) return <main className="draft-loading" role="status">正在读取当前浏览器中的草稿…</main>;
 
@@ -467,7 +508,7 @@ export default function Home() {
               {pendingImport && <div className="backup-preview">
                 <strong>确认恢复此备份？</strong>
                 <p>文件：{pendingImport.fileName} · 备份时间：{new Date(pendingImport.exportedAt).toLocaleString("zh-CN")}</p>
-                <p>姓名：{pendingImport.draft.name || "未填写"} · 项目：{pendingImport.draft.project || "未填写"}</p>
+                <p>姓名：{pendingImport.draft.name || "未填写"} · 项目：{pendingImport.draft.projects.find((entry) => entry.name.trim())?.name || "未填写"}</p>
                 <p>导入后会替换当前草稿。建议先下载当前草稿的备份。</p>
                 <div className="backup-actions"><Button onClick={restoreBackup}>覆盖并恢复</Button><Button variant="ghost" onClick={() => setPendingImport(null)}>取消</Button></div>
               </div>}
@@ -475,7 +516,7 @@ export default function Home() {
           </details>
           <div className="editor-heading">
             <div><span className="eyebrow">Resume editor · 01</span><h1>把经历写成证据</h1><p className="editor-deck">清楚、具体、可信。让每一段内容都经得起招聘者追问。</p></div>
-            <Button variant="outline" className="ai-button" onClick={optimizeCurrent} disabled={optimizing}>{optimizing ? <LoaderCircle className="spin" /> : <Sparkles />}{optimizing ? "正在检查" : "检查当前内容"}</Button>
+            <Button variant="outline" className="ai-button" onClick={optimizeCurrent} disabled={optimizing || (activeTab === "experience" && !draft.experiences.length) || (activeTab === "project" && !draft.projects.length)}>{optimizing ? <LoaderCircle className="spin" /> : <Sparkles />}{optimizing ? "正在检查" : "检查当前内容"}</Button>
           </div>
 
           <Tabs value={activeTab} onValueChange={(value: string) => { setActiveTab(value); setOptimization(null); }} className="editor-tabs">
@@ -503,32 +544,44 @@ export default function Home() {
                 <Field label="个人简介" value={draft.summary} multiline onChange={(value) => update("summary", value)} />
               </FormSection>
               <FormSection id="education" index="02" title="教育经历" description="填写与你当前求职方向最相关的教育背景。">
-                <div className="field-grid two">
-                  <Field label="学校" value={draft.school} onChange={(value) => update("school", value)} />
-                  <Field label="专业与学历" value={draft.degree} onChange={(value) => update("degree", value)} />
-                </div>
-                <Field label="在读时间" value={draft.educationDate} onChange={(value) => update("educationDate", value)} />
+                {draft.educations.map((entry, index) => <div className="entry-editor" key={index}>
+                  <div className="entry-editor-heading"><strong>教育 {index + 1}</strong><button type="button" onClick={() => removeEntry("educations", index)} aria-label={`删除教育 ${index + 1}`}><Trash2 size={14} /> 删除</button></div>
+                  <div className="field-grid two">
+                    <Field label="学校" value={entry.school} onChange={(value) => updateEntry("educations", index, "school", value)} />
+                    <Field label="专业与学历" value={entry.degree} onChange={(value) => updateEntry("educations", index, "degree", value)} />
+                  </div>
+                  <Field label="在读时间" value={entry.date} onChange={(value) => updateEntry("educations", index, "date", value)} />
+                </div>)}
+                <button type="button" className="add-row" onClick={() => addEntry("educations")} disabled={draft.educations.length >= MAX_ENTRIES}><Plus />添加教育经历</button>
               </FormSection>
             </TabsContent>
 
             <TabsContent value="experience" className="form-stack">
               <FormSection id="experience" index="03" title="实习经历" description="用动作、方法和结果说明你的贡献。">
-                <div className="field-grid two">
-                  <Field label="公司" value={draft.company} onChange={(value) => update("company", value)} />
-                  <Field label="职位" value={draft.role} onChange={(value) => update("role", value)} />
-                </div>
-                <Field label="时间" value={draft.experienceDate} onChange={(value) => update("experienceDate", value)} />
-                <Field label="工作内容" value={draft.experience} multiline onChange={(value) => update("experience", value)} />
+                {draft.experiences.map((entry, index) => <div className={`entry-editor ${selectedExperience === index ? "selected" : ""}`} key={index}>
+                  <div className="entry-editor-heading"><strong>实习 {index + 1}</strong><div><button type="button" className="entry-select" aria-pressed={selectedExperience === index} onClick={() => { setSelectedExperience(index); setOptimization(null); }}>{selectedExperience === index ? "当前检查对象" : "选为检查对象"}</button><button type="button" onClick={() => removeEntry("experiences", index)} aria-label={`删除实习 ${index + 1}`}><Trash2 size={14} /> 删除</button></div></div>
+                  <div className="field-grid two">
+                    <Field label="公司" value={entry.company} onChange={(value) => updateEntry("experiences", index, "company", value)} />
+                    <Field label="职位" value={entry.role} onChange={(value) => updateEntry("experiences", index, "role", value)} />
+                  </div>
+                  <Field label="时间" value={entry.date} onChange={(value) => updateEntry("experiences", index, "date", value)} />
+                  <Field label="工作内容" value={entry.description} multiline onChange={(value) => updateEntry("experiences", index, "description", value)} />
+                </div>)}
+                <button type="button" className="add-row" onClick={() => addEntry("experiences")} disabled={draft.experiences.length >= MAX_ENTRIES}><Plus />添加实习经历</button>
               </FormSection>
             </TabsContent>
 
             <TabsContent value="project" className="form-stack">
               <FormSection id="project" index="04" title="项目经历" description="突出问题、技术决策和可验证的结果。">
-                <div className="field-grid two">
-                  <Field label="项目名称" value={draft.project} onChange={(value) => update("project", value)} />
-                  <Field label="你的角色" value={draft.projectRole} onChange={(value) => update("projectRole", value)} />
-                </div>
-                <Field label="项目描述" value={draft.projectDetail} multiline onChange={(value) => update("projectDetail", value)} />
+                {draft.projects.map((entry, index) => <div className={`entry-editor ${selectedProject === index ? "selected" : ""}`} key={index}>
+                  <div className="entry-editor-heading"><strong>项目 {index + 1}</strong><div><button type="button" className="entry-select" aria-pressed={selectedProject === index} onClick={() => { setSelectedProject(index); setOptimization(null); }}>{selectedProject === index ? "当前检查对象" : "选为检查对象"}</button><button type="button" onClick={() => removeEntry("projects", index)} aria-label={`删除项目 ${index + 1}`}><Trash2 size={14} /> 删除</button></div></div>
+                  <div className="field-grid two">
+                    <Field label="项目名称" value={entry.name} onChange={(value) => updateEntry("projects", index, "name", value)} />
+                    <Field label="你的角色" value={entry.role} onChange={(value) => updateEntry("projects", index, "role", value)} />
+                  </div>
+                  <Field label="项目描述" value={entry.description} multiline onChange={(value) => updateEntry("projects", index, "description", value)} />
+                </div>)}
+                <button type="button" className="add-row" onClick={() => addEntry("projects")} disabled={draft.projects.length >= MAX_ENTRIES}><Plus />添加项目经历</button>
                 <Field label="技能" value={draft.skills} onChange={(value) => update("skills", value)} />
               </FormSection>
             </TabsContent>
@@ -582,9 +635,9 @@ export default function Home() {
               {draft.avatar && <img className="resume-avatar" src={draft.avatar} alt={`${draft.name || "求职者"}的头像`} />}
             </header>
             <ResumeSection title="个人简介"><p>{draft.summary}</p></ResumeSection>
-            <ResumeSection title="教育经历"><ResumeEntry title={draft.school} meta={draft.educationDate} subtitle={draft.degree} /></ResumeSection>
-            <ResumeSection title="实习经历"><ResumeEntry title={draft.company} meta={draft.experienceDate} subtitle={draft.role}>{splitLines(draft.experience).map((item) => <li key={item}>{item}</li>)}</ResumeEntry></ResumeSection>
-            <ResumeSection title="项目经历"><ResumeEntry title={draft.project} meta={draft.projectRole}>{splitLines(draft.projectDetail).map((item) => <li key={item}>{item}</li>)}</ResumeEntry></ResumeSection>
+            {draft.educations.some((entry) => Object.values(entry).some((value) => value.trim())) && <ResumeSection title="教育经历">{draft.educations.filter((entry) => Object.values(entry).some((value) => value.trim())).map((entry, index) => <ResumeEntry key={index} title={entry.school} meta={entry.date} subtitle={entry.degree} />)}</ResumeSection>}
+            {draft.experiences.some((entry) => Object.values(entry).some((value) => value.trim())) && <ResumeSection title="实习经历">{draft.experiences.filter((entry) => Object.values(entry).some((value) => value.trim())).map((entry, index) => <ResumeEntry key={index} title={entry.company} meta={entry.date} subtitle={entry.role}>{splitLines(entry.description).map((item, itemIndex) => <li key={itemIndex}>{item}</li>)}</ResumeEntry>)}</ResumeSection>}
+            {draft.projects.some((entry) => Object.values(entry).some((value) => value.trim())) && <ResumeSection title="项目经历">{draft.projects.filter((entry) => Object.values(entry).some((value) => value.trim())).map((entry, index) => <ResumeEntry key={index} title={entry.name} meta={entry.role}>{splitLines(entry.description).map((item, itemIndex) => <li key={itemIndex}>{item}</li>)}</ResumeEntry>)}</ResumeSection>}
             <ResumeSection title="专业技能"><div className="skill-pills">{draft.skills.split(",").map((skill) => <span key={skill}>{skill.trim()}</span>)}</div></ResumeSection>
           </article>
         </aside>
