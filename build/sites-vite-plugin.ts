@@ -3,7 +3,7 @@
 import { access, cp, mkdir, rm } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolve } from "node:path";
-import type { Plugin } from "vite";
+import type { ResolvedConfig, ViteDevServer } from "vite";
 
 const localUserId = "local_seedy";
 const localEmail = "seedy@sites.test";
@@ -29,17 +29,17 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-export function sites({ mockAuth = true } = {}): Plugin {
+export function sites({ mockAuth = true }: { mockAuth?: boolean } = {}) {
   let root = process.cwd();
   let command: "build" | "serve" = "build";
 
   return {
     name: "sites",
-    configResolved(config) {
+    configResolved(config: ResolvedConfig) {
       root = config.root;
       command = config.command;
     },
-    configureServer(server) {
+    configureServer(server: ViteDevServer) {
       if (!mockAuth) return;
       const secure = Boolean(server.config.server.https);
 

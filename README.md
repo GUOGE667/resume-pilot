@@ -33,11 +33,11 @@ Copy-Item .env.example .env.local
 pnpm dev
 ```
 
-本地运行默认无需 API Key。若所有者将来决定启用付费模型，再同时配置 `RESUMEPILOT_ALLOW_PAID_API=true` 与自己的 `OPENAI_API_KEY`；不要将真实密钥提交到 Git。运行 `pnpm lint`、`pnpm build` 检查源码。跨站闭环的人工验收步骤见 [EchoHire 作品集说明](https://github.com/GUOGE667/echohire-ai-interview/blob/main/docs/PORTFOLIO.md)。
+本地运行默认无需 API Key。若所有者将来决定启用付费模型，再同时配置 `RESUMEPILOT_ALLOW_PAID_API=true` 与自己的 `OPENAI_API_KEY`；不要将真实密钥提交到 Git。运行 `npm run lint`、`npm run typecheck`、`npm test` 和 `npm run build` 检查源码。跨站闭环的人工验收步骤见 [EchoHire 作品集说明](https://github.com/GUOGE667/echohire-ai-interview/blob/main/docs/PORTFOLIO.md)。
 
 ## 质量检查
 
-运行 `npm run lint`、`npm test` 和 `npm run build` 可检查静态规则、草稿备份与岗位对照等逻辑，以及生产构建。GitHub Actions 的 `CI` 工作流会在推送到 `main` 或提交 PR 时运行同一组检查，不需要 OpenAI API Key。
+运行 `npm run lint`、`npm run typecheck`、`npm test` 和 `npm run build` 可检查静态规则、TypeScript 类型、草稿备份与岗位对照等逻辑，以及生产构建。GitHub Actions 的 `CI` 工作流会在推送到 `main` 或提交 PR 时运行同一组检查，不需要 OpenAI API Key。
 
 ## 说明
 
