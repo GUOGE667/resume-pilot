@@ -67,6 +67,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .status-dot.saved { background: #12b76a; }
 .status-dot.error { background: #b44538; }
 .top-actions { justify-self: end; display: flex; gap: 6px; }
+.pdf-export-menu { width: min(330px, calc(100vw - 24px)); padding: 6px; }
+.pdf-export-menu [data-slot="dropdown-menu-item"] { align-items: flex-start; gap: 10px; padding: 10px; cursor: pointer; }
+.pdf-export-menu [data-slot="dropdown-menu-item"] > svg { margin-top: 2px; }
+.pdf-export-menu [data-slot="dropdown-menu-item"] > span { display: grid; gap: 3px; }
+.pdf-export-menu strong { color: #1d2939; font-size: .875rem; font-weight: 700; }
+.pdf-export-menu small { color: #667085; font-size: .75rem; line-height: 1.4; }
 
 .workspace { display: grid; grid-template-columns: 210px minmax(430px, .88fr) minmax(520px, 1.12fr); min-height: calc(100dvh - 64px); }
 .section-rail { position: sticky; top: 64px; height: calc(100dvh - 64px); display: flex; flex-direction: column; border-right: 1px solid #c9c5ba; padding: 30px 18px; background: #e8e4da; }
@@ -268,10 +274,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .resume-avatar { width: 62px; height: 76px; }
 }
 
+@page { size: A4; margin: 14mm; }
+
 @media print {
-  body { background: #fff; }
+  html, body, .app-shell { width: auto; min-height: 0; background: #fff; }
   .topbar, .section-rail, .editor-panel, .preview-toolbar { display: none !important; }
-  .workspace { display: block; }
+  .workspace { display: block; min-height: 0; }
   .preview-panel { position: static; height: auto; overflow: visible; padding: 0; background: #fff; }
-  .resume-paper { max-width: none; min-height: 0; box-shadow: none; }
+  .resume-paper { width: 100%; max-width: none; min-height: 0; margin: 0; padding: 0; color: #242824; background: #fff; box-shadow: none; print-color-adjust: exact; }
+  .sample-document-note { margin: 0 0 12px; padding-bottom: 8px; }
+  .resume-header, .entry-title, .resume-entry li, .skill-pills span { break-inside: avoid; page-break-inside: avoid; }
+  .resume-section h3 { break-after: avoid; page-break-after: avoid; }
+  .resume-section p, .resume-entry li { font-size: 9pt; line-height: 1.45; orphans: 2; widows: 2; }
+  .entry-title strong { font-size: 10pt; }
 }

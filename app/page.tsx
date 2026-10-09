@@ -19,6 +19,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -315,7 +316,16 @@ export default function Home() {
     setNotice("优化内容已应用，可继续编辑");
   };
 
-  const exportPdf = async () => {
+  const exportTextPdf = () => {
+    if (!document.querySelector(".resume-paper")) {
+      setNotice("没有找到可导出的简历预览");
+      return;
+    }
+    setNotice("请在打印窗口选择“保存为 PDF”；文字版支持复制和搜索");
+    window.print();
+  };
+
+  const exportImagePdf = async () => {
     const paper = document.querySelector<HTMLElement>(".resume-paper");
     if (!paper) {
       setNotice("没有找到可导出的简历预览");
@@ -399,7 +409,21 @@ export default function Home() {
         </div>
         <div className="top-actions">
           <Button variant="ghost" onClick={saveDraft}><Save />保存</Button>
-          <Button variant="outline" onClick={exportPdf} disabled={exporting}>{exporting ? <LoaderCircle className="spin" /> : <FileDown />}{exporting ? "正在生成" : "导出 PDF"}</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" disabled={exporting}>{exporting ? <LoaderCircle className="spin" /> : <FileDown />}{exporting ? "正在生成" : "导出 PDF"}</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="pdf-export-menu">
+              <DropdownMenuItem onSelect={exportTextPdf}>
+                <FileText />
+                <span><strong>文字版 PDF · 推荐</strong><small>打印窗口选择“保存为 PDF”，文字可复制和搜索</small></span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void exportImagePdf()}>
+                <FileDown />
+                <span><strong>图片版 PDF</strong><small>直接下载，适合保留当前预览外观</small></span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
