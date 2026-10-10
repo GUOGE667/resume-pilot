@@ -1,11 +1,12 @@
 "use client";
 
-import { type ChangeEvent, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   ArrowUpRight,
   BriefcaseBusiness,
   Check,
   Camera,
+  ChevronDown,
   FileDown,
   FileText,
   GraduationCap,
@@ -26,7 +27,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { analyzeJobRequirements } from "@/lib/job-match";
 import { collectPageBreakpoints, planPageSlices } from "@/lib/pdf-pagination";
-import { createResumeBackup, DRAFT_FIELDS, MAX_BACKUP_BYTES, MAX_ENTRIES, parseResumeBackup, parseResumeDraft, type DraftTextField, type ResumeDraft } from "@/lib/resume-backup";
+import { createResumeBackup, DRAFT_FIELDS, MAX_BACKUP_BYTES, MAX_ENTRIES, parseResumeBackup, type DraftTextField, type ResumeDraft } from "@/lib/resume-backup";
+import { activeVersion, createVersionStore, createVersionsBackup, deleteInactiveVersion, duplicateActiveVersion, loadVersionStore, MAX_VERSION_BACKUP_BYTES, MAX_VERSIONS, parseVersionsBackup, renameActiveVersion, selectVersion, updateActiveDraft, VERSION_STORAGE_KEY, type ResumeVersionStore } from "@/lib/resume-versions";
 
 type Optimization = {
   headline: string;
@@ -87,14 +89,13 @@ const subscribeToHydration = () => () => {};
 const getClientSnapshot = () => true;
 const getServerSnapshot = () => false;
 
-function readStoredDraft(): { value: ResumeDraft; error: boolean } {
-  if (typeof window === "undefined") return { value: initialDraft, error: false };
+function readStoredWorkspace(): { store: ResumeVersionStore; error: boolean } {
+  if (typeof window === "undefined") return { store: createVersionStore(initialDraft), error: false };
   try {
-    const stored = localStorage.getItem(DRAFT_STORAGE_KEY);
-    if (!stored) return { value: initialDraft, error: false };
-    return { value: parseResumeDraft(JSON.parse(stored)), error: false };
+    const { store, recovered } = loadVersionStore(localStorage.getItem(VERSION_STORAGE_KEY), localStorage.getItem(DRAFT_STORAGE_KEY), initialDraft);
+    return { store, error: recovered };
   } catch {
-    return { value: initialDraft, error: true };
+    return { store: createVersionStore(initialDraft), error: true };
   }
 }
 
@@ -119,9 +120,11 @@ function readCareerFeedback(): { feedback: CareerFeedback | null; notice: string
   }
 }
 
-function persistDraft(value: ResumeDraft): boolean {
+function persistWorkspace(value: ResumeVersionStore): boolean {
   try {
-    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(value));
+    localStorage.setItem(VERSION_STORAGE_KEY, JSON.stringify(value));
+    // Keep the current draft readable by an older deployed version of the site.
+    try { localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(activeVersion(value).draft)); } catch { /* Version storage is authoritative. */ }
     return true;
   } catch {
     return false;
@@ -131,16 +134,20 @@ function persistDraft(value: ResumeDraft): boolean {
 const splitLines = (value: string) => value.split(/[；;\n]/).map((item) => item.trim()).filter(Boolean);
 
 export default function Home() {
-  const [storedDraft] = useState(readStoredDraft);
+  const [storedWorkspace] = useState(readStoredWorkspace);
   const [incomingFeedback] = useState(readCareerFeedback);
   const loaded = useSyncExternalStore(subscribeToHydration, getClientSnapshot, getServerSnapshot);
-  const [draft, setDraft] = useState(storedDraft.value);
-  const draftRef = useRef(storedDraft.value);
+  const [versionStore, setVersionStore] = useState(storedWorkspace.store);
+  const versionStoreRef = useRef(storedWorkspace.store);
+  const [draft, setDraft] = useState(activeVersion(storedWorkspace.store).draft);
+  const draftRef = useRef(activeVersion(storedWorkspace.store).draft);
+  const [versionName, setVersionName] = useState(activeVersion(storedWorkspace.store).name);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(true);
-  const [saveError, setSaveError] = useState(storedDraft.error);
+  const [saveError, setSaveError] = useState(storedWorkspace.error);
   const [backupError, setBackupError] = useState("");
-  const [pendingImport, setPendingImport] = useState<{ draft: ResumeDraft; exportedAt: string; fileName: string } | null>(null);
+  const [pendingImport, setPendingImport] = useState<({ kind: "draft"; draft: ResumeDraft; exportedAt: string; fileName: string } | { kind: "versions"; store: ResumeVersionStore; exportedAt: string; fileName: string }) | null>(null);
   const [activeTab, setActiveTab] = useState(incomingFeedback.feedback ? "project" : "profile");
   const [template, setTemplate] = useState("modern");
   const [optimizing, setOptimizing] = useState(false);
@@ -152,16 +159,23 @@ export default function Home() {
   const [careerFeedback, setCareerFeedback] = useState<CareerFeedback | null>(incomingFeedback.feedback);
   const [notice, setNotice] = useState(incomingFeedback.notice);
 
-  const applyDraft = (next: ResumeDraft) => {
-    draftRef.current = next;
-    setDraft(next);
-    setOptimization(null);
-    setOptimizationTarget(null);
-    const success = persistDraft(next);
+  const applyWorkspace = useCallback((next: ResumeVersionStore, keepUnsaved = false) => {
+    const success = persistWorkspace(next);
+    if (success || keepUnsaved) {
+      versionStoreRef.current = next;
+      setVersionStore(next);
+      const nextDraft = activeVersion(next).draft;
+      draftRef.current = nextDraft;
+      setDraft(nextDraft);
+      setOptimization(null);
+      setOptimizationTarget(null);
+    }
     setSaved(success);
     setSaveError(!success);
     return success;
-  };
+  }, []);
+
+  const applyDraft = useCallback((next: ResumeDraft) => applyWorkspace(updateActiveDraft(versionStoreRef.current, next), true), [applyWorkspace]);
 
   useEffect(() => {
     if (incomingFeedback.feedback && incomingFeedback.hasHash) {
@@ -196,7 +210,7 @@ export default function Home() {
       },
     }, { signal: lifecycle.signal })).catch(() => undefined);
     return () => lifecycle.abort();
-  }, []);
+  }, [applyDraft]);
 
   const update = (field: DraftTextField, value: string) => {
     applyDraft({ ...draftRef.current, [field]: value });
@@ -227,8 +241,53 @@ export default function Home() {
     if (kind === "projects") setSelectedProject((current) => Math.max(0, current > index ? current - 1 : Math.min(current, draftRef.current.projects.length - 1)));
   };
 
+  const copyVersion = () => {
+    try {
+      const next = duplicateActiveVersion(versionStoreRef.current, crypto.randomUUID());
+      if (!applyWorkspace(next)) { setNotice("复制失败：浏览器存储空间不足，请先下载备份"); return; }
+      setVersionName(activeVersion(next).name);
+      setConfirmDeleteId(null);
+      setPendingImport(null);
+      setSelectedExperience(0);
+      setSelectedProject(0);
+      setActiveTab("target");
+      setNotice("已复制当前简历。可修改版本名称和目标岗位，不会覆盖原版");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "无法复制版本"); }
+  };
+
+  const switchVersion = (id: string) => {
+    try {
+      const next = selectVersion(versionStoreRef.current, id);
+      if (!applyWorkspace(next)) { setNotice("切换失败：请检查浏览器存储空间"); return; }
+      setVersionName(activeVersion(next).name);
+      setConfirmDeleteId(null);
+      setPendingImport(null);
+      setSelectedExperience(0);
+      setSelectedProject(0);
+      setNotice(`已切换到“${activeVersion(next).name}”`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "无法切换版本"); }
+  };
+
+  const renameVersion = () => {
+    try {
+      const next = renameActiveVersion(versionStoreRef.current, versionName);
+      if (!applyWorkspace(next)) { setNotice("重命名失败：请检查浏览器存储空间"); return; }
+      setVersionName(activeVersion(next).name);
+      setNotice("版本名称已保存");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "无法重命名版本"); }
+  };
+
+  const removeVersion = (id: string) => {
+    try {
+      const next = deleteInactiveVersion(versionStoreRef.current, id);
+      if (!applyWorkspace(next)) { setNotice("删除失败：请检查浏览器存储空间"); return; }
+      setConfirmDeleteId(null);
+      setNotice("版本已删除");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "无法删除版本"); }
+  };
+
   const saveDraft = () => {
-    const success = persistDraft(draftRef.current);
+    const success = persistWorkspace(versionStoreRef.current);
     setSaved(success);
     setSaveError(!success);
     setNotice(success ? "草稿已保存在当前浏览器" : "保存失败：请检查浏览器存储空间或隐私设置");
@@ -251,10 +310,26 @@ export default function Home() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `ResumePilot-草稿-${new Date().toISOString().slice(0, 10)}.json`;
+      link.download = `ResumePilot-当前版本-${new Date().toISOString().slice(0, 10)}.json`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setNotice("草稿备份已下载，请妥善保管文件");
+      setNotice("当前版本备份已下载，请妥善保管文件");
+    } catch {
+      setBackupError("备份下载失败，请重试");
+    }
+  };
+
+  const downloadAllVersions = () => {
+    setBackupError("");
+    try {
+      const blob = new Blob([createVersionsBackup(versionStoreRef.current)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `ResumePilot-全部版本-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setNotice("全部版本备份已下载，请妥善保管文件");
     } catch {
       setBackupError("备份下载失败，请重试");
     }
@@ -266,13 +341,22 @@ export default function Home() {
     if (!file) return;
     setBackupError("");
     setPendingImport(null);
-    if (file.size > MAX_BACKUP_BYTES) {
-      setBackupError("备份文件不能超过 12 MB");
+    if (file.size > MAX_VERSION_BACKUP_BYTES) {
+      setBackupError("备份文件不能超过 40 MB");
       return;
     }
     try {
-      const parsed = parseResumeBackup(await file.text());
-      setPendingImport({ ...parsed, fileName: file.name });
+      const content = await file.text();
+      const raw: unknown = JSON.parse(content);
+      const format = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>).format : null;
+      if (format === "resumepilot-versions") {
+        const parsed = parseVersionsBackup(content);
+        setPendingImport({ kind: "versions", ...parsed, fileName: file.name });
+      } else {
+        if (file.size > MAX_BACKUP_BYTES) throw new Error("单份简历备份不能超过 12 MB");
+        const parsed = parseResumeBackup(content);
+        setPendingImport({ kind: "draft", ...parsed, fileName: file.name });
+      }
     } catch (error) {
       setBackupError(error instanceof Error ? error.message : "无法读取此备份文件");
     }
@@ -280,13 +364,18 @@ export default function Home() {
 
   const restoreBackup = () => {
     if (!pendingImport) return;
-    const success = applyDraft(pendingImport.draft);
+    const success = pendingImport.kind === "versions" ? applyWorkspace(pendingImport.store) : applyDraft(pendingImport.draft);
+    if (!success && pendingImport.kind === "versions") {
+      setBackupError("全部版本恢复失败：请检查浏览器存储空间，备份文件仍可重试");
+      return;
+    }
+    setVersionName(activeVersion(versionStoreRef.current).name);
     setPendingImport(null);
     setActiveTab("profile");
     setSelectedExperience(0);
     setSelectedProject(0);
     setOptimization(null);
-    setNotice(success ? "草稿已恢复并保存在当前浏览器" : "草稿已载入，但浏览器保存失败；请先保留备份文件");
+    setNotice(success ? pendingImport.kind === "versions" ? "全部版本已恢复并保存在当前浏览器" : "当前版本已恢复并保存在当前浏览器" : "草稿已载入，但浏览器保存失败；请先保留备份文件");
   };
 
   const startInterview = () => {
@@ -434,6 +523,7 @@ export default function Home() {
     JSON.stringify(draft.educations) === JSON.stringify(initialDraft.educations) &&
     JSON.stringify(draft.experiences) === JSON.stringify(initialDraft.experiences) &&
     JSON.stringify(draft.projects) === JSON.stringify(initialDraft.projects);
+  const currentVersion = activeVersion(versionStore);
 
   if (!loaded) return <main className="draft-loading" role="status">正在读取当前浏览器中的草稿…</main>;
 
@@ -446,7 +536,7 @@ export default function Home() {
         </a>
         <div className="document-status">
           <span className={saveError ? "status-dot error" : saved ? "status-dot saved" : "status-dot"} />
-          {saveError ? "本地保存失败" : pristineExample ? "虚构演示样本" : saved ? "已保存在当前浏览器" : "有未保存的修改"}
+          {saveError ? "本地保存失败" : `${currentVersion.name} · ${pristineExample ? "虚构演示样本" : saved ? "已保存在当前浏览器" : "有未保存的修改"}`}
         </div>
         <div className="top-actions">
           <Button variant="ghost" onClick={saveDraft}><Save />保存</Button>
@@ -490,17 +580,42 @@ export default function Home() {
         </aside>
 
         <section className="editor-panel">
-          {saveError && <div className="save-error-banner" role="alert">草稿未能保存到当前浏览器。请检查存储权限或空间，再点击顶部“保存”重试。</div>}
+          {saveError && <div className="save-error-banner" role="alert">本地版本记录无法读取或保存。若页面已恢复原有草稿，请先下载备份，再点击顶部“保存”重试。</div>}
           {remainingSamples.length > 0 && <div className="sample-banner" role="status">
             <div><strong>{pristineExample ? "这是一份虚构的演示简历" : "简历中仍有示例内容"}</strong><p>请核对并替换：{remainingSamples.join("、")}。导出 PDF 前确认这些内容属于你本人。</p></div>
             {pristineExample && <Button variant="outline" onClick={clearExample}>清空示例，开始填写</Button>}
           </div>}
+          <details className="version-panel">
+            <summary><span>简历版本</span><strong>{currentVersion.name}</strong><small>{versionStore.versions.length}/{MAX_VERSIONS} 份</small><ChevronDown className="version-chevron" aria-hidden="true" /></summary>
+            <div className="version-panel-body">
+              <p>按岗位复制和修改简历，各版本单独保存在当前浏览器。切换版本会同步更新预览、岗位对照和导出内容。</p>
+              <div className="version-rename">
+                <label className="field"><span>当前版本名称</span><input value={versionName} maxLength={40} onChange={(event) => setVersionName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") renameVersion(); }} /></label>
+                <Button variant="outline" onClick={renameVersion} disabled={!versionName.trim() || versionName.trim() === currentVersion.name}>保存名称</Button>
+              </div>
+              <div className="version-list" aria-label="已保存的简历版本">
+                {versionStore.versions.map((item) => <div className={`version-item ${item.id === versionStore.activeId ? "active" : ""}`} key={item.id}>
+                  <div><strong>{item.name}</strong><small>修改于 {new Date(item.updatedAt).toLocaleString("zh-CN")}</small></div>
+                  <div className="version-item-actions">
+                    {item.id === versionStore.activeId ? <span className="version-current">当前版本</span> : <>
+                      <Button variant="outline" onClick={() => switchVersion(item.id)}>切换</Button>
+                      {confirmDeleteId === item.id ? <><Button variant="destructive" onClick={() => removeVersion(item.id)}>确认删除</Button><Button variant="ghost" onClick={() => setConfirmDeleteId(null)}>取消</Button></>
+                        : <Button variant="ghost" onClick={() => setConfirmDeleteId(item.id)}>删除</Button>}
+                    </>}
+                  </div>
+                </div>)}
+              </div>
+              <Button onClick={copyVersion} disabled={versionStore.versions.length >= MAX_VERSIONS}><Plus />复制当前版本</Button>
+              <p className="version-limit">最多保存 {MAX_VERSIONS} 份；清理浏览器数据会删除本地版本。请定期下载“全部版本备份”。</p>
+            </div>
+          </details>
           <details className="backup-panel">
             <summary>草稿备份与恢复</summary>
             <div className="backup-panel-body">
-              <p>下载 JSON 备份可在其他设备恢复。文件包含你填写的简历资料，请自行妥善保管；导入会覆盖当前浏览器中的草稿。</p>
+              <p>可下载当前版本或全部版本的 JSON 备份，在其他设备恢复。文件包含简历资料，请妥善保管；导入前会确认覆盖范围。</p>
               <div className="backup-actions">
-                <Button variant="outline" onClick={downloadBackup}>下载备份</Button>
+                <Button variant="outline" onClick={downloadBackup}>下载当前版本</Button>
+                <Button variant="outline" onClick={downloadAllVersions}>下载全部版本</Button>
                 <Button variant="outline" onClick={() => backupInputRef.current?.click()}>导入备份</Button>
                 <input ref={backupInputRef} className="backup-file-input" type="file" accept=".json,application/json" onChange={selectBackup} aria-label="选择 ResumePilot 草稿备份文件" />
               </div>
@@ -508,8 +623,9 @@ export default function Home() {
               {pendingImport && <div className="backup-preview">
                 <strong>确认恢复此备份？</strong>
                 <p>文件：{pendingImport.fileName} · 备份时间：{new Date(pendingImport.exportedAt).toLocaleString("zh-CN")}</p>
-                <p>姓名：{pendingImport.draft.name || "未填写"} · 项目：{pendingImport.draft.projects.find((entry) => entry.name.trim())?.name || "未填写"}</p>
-                <p>导入后会替换当前草稿。建议先下载当前草稿的备份。</p>
+                {pendingImport.kind === "draft" ? <p>单份简历 · 姓名：{pendingImport.draft.name || "未填写"} · 项目：{pendingImport.draft.projects.find((entry) => entry.name.trim())?.name || "未填写"}</p>
+                  : <p>全部版本 · 共 {pendingImport.store.versions.length} 份 · 当前版本：{activeVersion(pendingImport.store).name}</p>}
+                <p>{pendingImport.kind === "draft" ? "导入后会替换当前版本。" : "导入后会替换当前浏览器的全部版本。"}建议先下载“全部版本”备份。</p>
                 <div className="backup-actions"><Button onClick={restoreBackup}>覆盖并恢复</Button><Button variant="ghost" onClick={() => setPendingImport(null)}>取消</Button></div>
               </div>}
             </div>

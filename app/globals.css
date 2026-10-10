@@ -62,7 +62,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .topbar { position: sticky; z-index: 40; top: 0; height: 64px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 24px; border-bottom: 1px solid #c9c5ba; background: rgba(248,246,240,.96); }
 .brand { display: inline-flex; align-items: center; gap: 10px; color: #1b1d1b; text-decoration: none; font-family: Georgia, "Noto Serif SC", serif; font-size: 1rem; font-weight: 700; letter-spacing: -.015em; }
 .brand-mark { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid #273f37; border-radius: 3px; color: #273f37; background: transparent; }
-.document-status { display: flex; align-items: center; gap: 8px; color: #667085; font-size: .8rem; }
+.document-status { display: flex; align-items: center; gap: 8px; max-width: 32vw; overflow: hidden; color: #667085; font-size: .8rem; white-space: nowrap; text-overflow: ellipsis; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #f79009; }
 .status-dot.saved { background: #12b76a; }
 .status-dot.error { background: #b44538; }
@@ -99,6 +99,29 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .sample-banner strong { color: #633d22; font-size: .86rem; }
 .sample-banner p { margin: 5px 0 0; color: #76563d; font-size: .76rem; line-height: 1.55; }
 .sample-banner button { flex: 0 0 auto; border-color: #9b6846; color: #6f432b; background: #fffefa; }
+.version-panel { margin-bottom: 14px; border: 1px solid #b8c5ba; border-left: 3px solid #31594b; background: #f3f6f1; }
+.version-panel summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 13px 16px; color: #31594b; cursor: pointer; font-size: .78rem; font-weight: 700; }
+.version-panel summary::marker { content: ""; }
+.version-panel summary strong { color: #203c31; font-size: .86rem; }
+.version-panel summary small { margin-left: auto; color: #66776b; font-size: .7rem; }
+.version-chevron { width: 15px; height: 15px; flex: 0 0 auto; transition: transform .18s ease; }
+.version-panel[open] .version-chevron { transform: rotate(180deg); }
+.version-panel summary:focus-visible { outline: 3px solid rgba(39,63,55,.22); outline-offset: 2px; }
+.version-panel[open] summary { border-bottom: 1px solid #ced8cd; }
+.version-panel-body { display: grid; gap: 14px; padding: 16px; }
+.version-panel-body p { margin: 0; color: #617069; font-size: .75rem; line-height: 1.6; }
+.version-rename { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: end; gap: 10px; }
+.version-rename button, .version-item-actions button { min-height: 34px; font-size: .72rem; }
+.version-list { display: grid; gap: 7px; }
+.version-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid #d6ded4; padding: 11px 12px; background: #fffefa; }
+.version-item.active { border-color: #849d8b; }
+.version-item > div:first-child { min-width: 0; display: grid; gap: 4px; }
+.version-item strong { overflow-wrap: anywhere; color: #243b30; font-size: .79rem; }
+.version-item small { color: #738078; font-size: .68rem; }
+.version-item-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.version-current { color: #31594b; font-size: .7rem; font-weight: 700; }
+.version-panel-body > button { justify-self: start; }
+.version-panel-body .version-limit { border-top: 1px solid #d6ded4; padding-top: 10px; font-size: .7rem; }
 .backup-panel { margin-bottom: 20px; border: 1px solid #d9d5cb; background: #faf9f5; }
 .backup-panel summary { padding: 12px 16px; color: #31594b; cursor: pointer; font-size: .8rem; font-weight: 700; }
 .backup-panel summary:focus-visible { outline: 3px solid rgba(39,63,55,.22); outline-offset: 2px; }
@@ -267,6 +290,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .completion-progress { margin-bottom: 0; }
   .editor-panel { padding: 24px 16px 48px; }
   .sample-banner button { width: 100%; }
+  .version-rename { grid-template-columns: 1fr; }
+  .version-rename button { justify-self: start; }
   .editor-heading { align-items: stretch; flex-direction: column; }
   .tab-list { gap: 14px; overflow-x: auto; }
   .field-grid.two { grid-template-columns: 1fr; }
