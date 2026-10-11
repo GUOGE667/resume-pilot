@@ -25,7 +25,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { analyzeJobRequirements } from "@/lib/job-match";
+import { analyzeDraftJobRequirements, compareResumeDrafts } from "@/lib/version-compare";
 import { collectPageBreakpoints, planPageSlices } from "@/lib/pdf-pagination";
 import { createResumeBackup, DRAFT_FIELDS, MAX_BACKUP_BYTES, MAX_ENTRIES, parseResumeBackup, type DraftTextField, type ResumeDraft } from "@/lib/resume-backup";
 import { activeVersion, createVersionStore, createVersionsBackup, deleteInactiveVersion, duplicateActiveVersion, loadVersionStore, MAX_VERSION_BACKUP_BYTES, MAX_VERSIONS, parseVersionsBackup, renameActiveVersion, selectVersion, updateActiveDraft, VERSION_STORAGE_KEY, type ResumeVersionStore } from "@/lib/resume-versions";
@@ -142,6 +142,8 @@ export default function Home() {
   const [draft, setDraft] = useState(activeVersion(storedWorkspace.store).draft);
   const draftRef = useRef(activeVersion(storedWorkspace.store).draft);
   const [versionName, setVersionName] = useState(activeVersion(storedWorkspace.store).name);
+  const [compareId, setCompareId] = useState("");
+  const [showUnchanged, setShowUnchanged] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(true);
@@ -509,14 +511,7 @@ export default function Home() {
     return Math.round(fields.filter((value) => value.trim()).length / fields.length * 100);
   }, [draft]);
 
-  const jobRequirements = useMemo(() => analyzeJobRequirements(draft.jobDescription, [
-    { section: "求职方向", excerpt: draft.title },
-    { section: "个人简介", excerpt: draft.summary },
-    ...draft.educations.map((entry, index) => ({ section: `教育经历 ${index + 1}`, excerpt: `${entry.school} ${entry.degree}` })),
-    ...draft.experiences.map((entry, index) => ({ section: `实习经历 ${index + 1}`, excerpt: `${entry.company} ${entry.role} ${entry.description}` })),
-    ...draft.projects.map((entry, index) => ({ section: `项目经历 ${index + 1}`, excerpt: `${entry.name} ${entry.role} ${entry.description}` })),
-    { section: "专业技能", excerpt: draft.skills },
-  ]), [draft]);
+  const jobRequirements = useMemo(() => analyzeDraftJobRequirements(draft), [draft]);
   const mentionedCount = jobRequirements.filter((item) => item.evidence).length;
   const remainingSamples = sampleFields.filter(({ matches }) => matches(draft)).map(({ label }) => label);
   const pristineExample = DRAFT_FIELDS.every((field) => draft[field] === initialDraft[field]) &&
@@ -524,6 +519,11 @@ export default function Home() {
     JSON.stringify(draft.experiences) === JSON.stringify(initialDraft.experiences) &&
     JSON.stringify(draft.projects) === JSON.stringify(initialDraft.projects);
   const currentVersion = activeVersion(versionStore);
+  const comparisonVersion = versionStore.versions.find((item) => item.id === compareId && item.id !== versionStore.activeId)
+    ?? versionStore.versions.find((item) => item.id !== versionStore.activeId);
+  const comparisonSections = comparisonVersion ? compareResumeDrafts(comparisonVersion.draft, currentVersion.draft) : [];
+  const changedFields = comparisonSections.reduce((total, section) => total + section.rows.filter((item) => item.status !== "same").length, 0);
+  const comparisonRequirements = comparisonVersion ? analyzeDraftJobRequirements(comparisonVersion.draft) : [];
 
   if (!loaded) return <main className="draft-loading" role="status">正在读取当前浏览器中的草稿…</main>;
 
@@ -607,6 +607,46 @@ export default function Home() {
               </div>
               <Button onClick={copyVersion} disabled={versionStore.versions.length >= MAX_VERSIONS}><Plus />复制当前版本</Button>
               <p className="version-limit">最多保存 {MAX_VERSIONS} 份；清理浏览器数据会删除本地版本。请定期下载“全部版本备份”。</p>
+            </div>
+          </details>
+          <details className="compare-panel">
+            <summary><span>版本对比</span><small>{comparisonVersion ? `${changedFields} 处字段变化` : "复制简历后可对比"}</small><ChevronDown className="compare-chevron" aria-hidden="true" /></summary>
+            <div className="compare-panel-body">
+              {!comparisonVersion ? <p>先在“简历版本”中复制当前简历，再按目标岗位修改。保存两份版本后即可在这里对比。</p> : <>
+                <p>选择另一份简历与当前版本逐项对照。此处只读取当前浏览器的数据，不会修改简历。</p>
+                <div className="compare-controls">
+                  <label className="field"><span>对照版本（左侧）</span><select value={comparisonVersion.id} onChange={(event) => setCompareId(event.target.value)}>
+                    {versionStore.versions.filter((item) => item.id !== versionStore.activeId).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select></label>
+                  <div className="compare-current"><span>当前版本（右侧）</span><strong>{currentVersion.name}</strong></div>
+                  <label className="compare-toggle"><input type="checkbox" checked={showUnchanged} onChange={(event) => setShowUnchanged(event.target.checked)} />显示未变化字段</label>
+                </div>
+                <div className="compare-columns" aria-hidden="true"><span>{comparisonVersion.name}</span><span>{currentVersion.name}</span></div>
+                {changedFields === 0 && !showUnchanged ? <div className="compare-empty">两份简历的可对照文字相同。可勾选“显示未变化字段”查看全部内容。</div> :
+                  <div className="compare-sections">{comparisonSections.map((section) => {
+                    const rows = showUnchanged ? section.rows : section.rows.filter((item) => item.status !== "same");
+                    return rows.length ? <section className="compare-section" key={section.title}><h3>{section.title}</h3>
+                      {rows.map((item) => <div className="compare-row" key={item.key}>
+                        <div className="compare-row-heading"><strong>{item.label}</strong><span data-status={item.status}>{item.status === "same" ? "未变化" : item.status === "added" ? "新增" : item.status === "removed" ? "移除" : "已修改"}</span></div>
+                        <div className="compare-values"><div>{item.before || <em>未填写</em>}</div><div>{item.after || <em>未填写</em>}</div></div>
+                      </div>)}
+                    </section> : null;
+                  })}</div>}
+                <div className="compare-coverage">
+                  <h3>各版本的岗位关键词</h3>
+                  <p>分别对照每份版本自己的职位 JD；不同 JD 的数字不能直接比较，也不代表录用概率。这里只检查文字提及情况。</p>
+                  <div className="compare-coverage-grid">{[
+                    { version: comparisonVersion, requirements: comparisonRequirements },
+                    { version: currentVersion, requirements: jobRequirements },
+                  ].map(({ version, requirements }) => <section className="compare-coverage-card" key={version.id}>
+                    <div><strong>{version.name}</strong><span>{requirements.length ? `${requirements.filter((item) => item.evidence).length}/${requirements.length} 项有提及` : "无可对照项"}</span></div>
+                    {!version.draft.jobDescription.trim() ? <p>尚未填写职位 JD。</p> : requirements.length === 0 ? <p>JD 中暂未识别出可对照的关键词。</p> :
+                      <ul>{requirements.map((item) => <li key={item.label} className={item.evidence ? "covered" : "missing"}>
+                        <strong>{item.label}</strong><span>{item.evidence ? `已提及 · ${item.evidence.section}：${item.evidence.excerpt}` : "简历未找到相关文字"}</span>
+                      </li>)}</ul>}
+                  </section>)}</div>
+                </div>
+              </>}
             </div>
           </details>
           <details className="backup-panel">
