@@ -289,6 +289,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .preview-toolbar strong { color: #344054; font-size: .8rem; }
 .preview-toolbar [data-slot="select-trigger"] { min-width: 132px; color: #475467; background: rgba(255,255,255,.7); font-size: .76rem; font-weight: 650; }
 .preview-toolbar svg { width: 15px; }
+.preview-toolbar .preview-controls { display: flex; align-items: center; gap: 8px; }
+.preview-controls button { min-height: 35px; padding: 0 10px; background: rgba(255,255,255,.7); font-size: .76rem; }
+.pdf-check-card { max-width: 640px; margin: 0 auto 16px; padding: 15px 17px; border: 1px solid #c7b47f; border-left: 3px solid #ad8240; color: #554724; background: #fffaf0; font-size: .78rem; line-height: 1.55; }
+.pdf-check-card.readable { border-color: #98b9a3; border-left-color: #39835b; color: #284c38; background: #f3faf5; }
+.pdf-check-card.unreadable { border-color: #d6a299; border-left-color: #b44538; color: #873b31; background: #fff4f1; }
+.pdf-check-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pdf-check-heading strong { font-size: .88rem; }
+.pdf-check-heading button { border: 0; padding: 0 2px; color: inherit; background: transparent; cursor: pointer; font-size: 1.2rem; }
+.pdf-check-card p { margin: 8px 0; overflow-wrap: anywhere; }
+.pdf-check-card details { margin: 8px 0; }
+.pdf-check-card summary { cursor: pointer; font-weight: 700; }
+.pdf-check-card small { display: block; margin-top: 10px; opacity: .85; }
 .resume-paper { width: 100%; max-width: 660px; min-height: 860px; margin: 0 auto; padding: clamp(38px, 5vw, 64px); color: #242824; background: #fffefa; box-shadow: 0 14px 34px rgba(48,43,34,.13); }
 .sample-document-note { margin: -12px 0 20px; border-bottom: 1px solid #d6baa4; padding-bottom: 9px; color: #925f3b; font-size: .68rem; font-weight: 700; letter-spacing: .03em; }
 .resume-paper > header { padding-bottom: 22px; border-bottom: 1px solid #273f37; }
@@ -350,6 +362,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .career-feedback-heading > strong { justify-items: start; }
   .career-action-plan { grid-template-columns: 1fr; }
   .preview-panel { padding: 22px 12px 50px; }
+  .preview-toolbar { flex-wrap: wrap; gap: 10px; }
   .resume-paper { min-height: 700px; padding: 30px 25px; }
   .resume-header { gap: 16px; }
   .resume-avatar { width: 62px; height: 76px; }
@@ -364,7 +377,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 @media print {
   html, body, .app-shell { width: auto; min-height: 0; background: #fff; }
-  .topbar, .section-rail, .editor-panel, .preview-toolbar { display: none !important; }
+  .topbar, .section-rail, .editor-panel, .preview-toolbar, .pdf-check-card { display: none !important; }
   .workspace { display: block; min-height: 0; }
   .preview-panel { position: static; height: auto; overflow: visible; padding: 0; background: #fff; }
   .resume-paper { width: 100%; max-width: none; min-height: 0; margin: 0; padding: 0; color: #242824; background: #fff; box-shadow: none; print-color-adjust: exact; }

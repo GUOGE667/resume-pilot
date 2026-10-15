@@ -27,6 +27,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { analyzeDraftJobRequirements, compareResumeDrafts } from "@/lib/version-compare";
 import { collectPageBreakpoints, planPageSlices } from "@/lib/pdf-pagination";
+import { evaluatePdfReadability, type PdfReadabilityReport } from "@/lib/pdf-readability";
 import { createResumeBackup, DRAFT_FIELDS, MAX_BACKUP_BYTES, MAX_ENTRIES, parseResumeBackup, type DraftTextField, type ResumeDraft } from "@/lib/resume-backup";
 import { activeVersion, createVersionStore, createVersionsBackup, deleteInactiveVersion, duplicateActiveVersion, loadVersionStore, MAX_VERSION_BACKUP_BYTES, MAX_VERSIONS, parseVersionsBackup, renameActiveVersion, selectVersion, updateActiveDraft, VERSION_STORAGE_KEY, type ResumeVersionStore } from "@/lib/resume-versions";
 
@@ -146,6 +147,7 @@ export default function Home() {
   const [showUnchanged, setShowUnchanged] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const backupInputRef = useRef<HTMLInputElement>(null);
+  const pdfCheckInputRef = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState(true);
   const [saveError, setSaveError] = useState(storedWorkspace.error);
   const [backupError, setBackupError] = useState("");
@@ -154,6 +156,9 @@ export default function Home() {
   const [template, setTemplate] = useState("modern");
   const [optimizing, setOptimizing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [checkingPdf, setCheckingPdf] = useState(false);
+  const [pdfCheck, setPdfCheck] = useState<{ fileName: string; report: PdfReadabilityReport } | null>(null);
+  const [pdfCheckError, setPdfCheckError] = useState("");
   const [optimization, setOptimization] = useState<Optimization | null>(null);
   const [optimizationTarget, setOptimizationTarget] = useState<{ section: string; index: number; original: string } | null>(null);
   const [selectedExperience, setSelectedExperience] = useState(0);
@@ -171,6 +176,8 @@ export default function Home() {
       setDraft(nextDraft);
       setOptimization(null);
       setOptimizationTarget(null);
+      setPdfCheck(null);
+      setPdfCheckError("");
     }
     setSaved(success);
     setSaveError(!success);
@@ -502,6 +509,44 @@ export default function Home() {
     }
   };
 
+  const inspectPdf = async (file: File | undefined) => {
+    if (!file) return;
+    setPdfCheck(null);
+    setPdfCheckError("");
+    if (file.size > 10 * 1024 * 1024) {
+      setPdfCheckError("PDF 不能超过 10 MB，请选择较小的文件。");
+      return;
+    }
+    const checkedDraft = draftRef.current;
+    setCheckingPdf(true);
+    try {
+      const [{ getDocument, GlobalWorkerOptions }, { default: workerUrl }] = await Promise.all([
+        import("pdfjs-dist/legacy/build/pdf.mjs"),
+        import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url"),
+      ]);
+      GlobalWorkerOptions.workerSrc = workerUrl;
+      const task = getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+      try {
+        const document = await task.promise;
+        const pages: string[] = [];
+        for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+          const page = await document.getPage(pageNumber);
+          const content = await page.getTextContent();
+          pages.push(content.items.filter((item) => "str" in item).map((item) => item.str).join(" "));
+        }
+        if (draftRef.current === checkedDraft) {
+          setPdfCheck({ fileName: file.name, report: evaluatePdfReadability(pages, checkedDraft) });
+        } else setPdfCheckError("检查期间简历内容发生变化，请重新选择 PDF 检查。");
+      } finally {
+        await task.destroy();
+      }
+    } catch {
+      setPdfCheckError("无法读取这份 PDF。请确认文件没有损坏或加密，再重新选择。");
+    } finally {
+      setCheckingPdf(false);
+    }
+  };
+
   const score = useMemo(() => {
     const fields = [draft.name, draft.title, draft.email, draft.phone, draft.city, draft.summary,
       draft.educations.some((entry) => entry.school.trim()) ? "yes" : "",
@@ -759,7 +804,7 @@ export default function Home() {
                   <p className="match-disclaimer">仅对照文字提及情况，不能验证能力，也不代表录用概率。最多展示 12 项可识别关键词。</p>
                 </div>
                 <div className="interview-handoff">
-                  <div><strong>带着目标岗位开始面试练习</strong><p>将求职方向、职位 JD 和简历正文导入 EchoHire。当前免费题目只根据岗位和 JD 生成，简历正文暂不参与出题。头像和联系方式不会传递。</p></div>
+                  <div><strong>带着目标岗位开始面试练习</strong><p>将求职方向、职位 JD 和简历正文导入 EchoHire。若项目或实习描述足够具体，免费模式会生成最多两道显示原文依据的定制题。头像和联系方式不会传递。</p></div>
                   <Button onClick={startInterview}>前往 EchoHire 练习<ArrowUpRight /></Button>
                 </div>
               </FormSection>
@@ -781,7 +826,19 @@ export default function Home() {
         </section>
 
         <aside className="preview-panel">
-          <div className="preview-toolbar"><div><span className="eyebrow">实时预览</span><strong>{template === "modern" ? "现代单栏" : "经典商务"}</strong></div><Select value={template} onValueChange={setTemplate}><SelectTrigger aria-label="选择简历模板"><LayoutTemplate /><SelectValue /></SelectTrigger><SelectContent><SelectItem value="modern">现代单栏</SelectItem><SelectItem value="classic">经典商务</SelectItem></SelectContent></Select></div>
+          <div className="preview-toolbar"><div><span className="eyebrow">实时预览</span><strong>{template === "modern" ? "现代单栏" : "经典商务"}</strong></div><div className="preview-controls"><input ref={pdfCheckInputRef} className="sr-only" type="file" accept="application/pdf,.pdf" aria-label="选择要检查的 PDF" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void inspectPdf(file); }} /><Button variant="outline" disabled={checkingPdf} onClick={() => pdfCheckInputRef.current?.click()}>{checkingPdf ? <LoaderCircle className="spin" /> : <FileText />}检查 PDF</Button><Select value={template} onValueChange={setTemplate}><SelectTrigger aria-label="选择简历模板"><LayoutTemplate /><SelectValue /></SelectTrigger><SelectContent><SelectItem value="modern">现代单栏</SelectItem><SelectItem value="classic">经典商务</SelectItem></SelectContent></Select></div></div>
+          {(pdfCheck || pdfCheckError) && <section className={`pdf-check-card ${pdfCheck?.report.status ?? "review"}`} aria-live="polite">
+            <div className="pdf-check-heading"><strong>{pdfCheck ? pdfCheck.report.status === "readable" ? "关键文字可读取" : pdfCheck.report.status === "unreadable" ? "PDF 文字读取失败" : "PDF 需要核对" : "PDF 检查未完成"}</strong><button type="button" onClick={() => { setPdfCheck(null); setPdfCheckError(""); }} aria-label="关闭 PDF 检查结果">×</button></div>
+            {pdfCheckError ? <p>{pdfCheckError}</p> : pdfCheck && <>
+              <p><b>{pdfCheck.fileName}</b> · {pdfCheck.report.pageCount} 页 · 提取到约 {pdfCheck.report.characterCount} 个字符 · 关键字段 {pdfCheck.report.checkedFields - pdfCheck.report.missingFields.length}/{pdfCheck.report.checkedFields}</p>
+              {pdfCheck.report.status === "unreadable" && <p>这份 PDF 几乎没有可提取文字。图片版 PDF 通常会出现这种情况；请用“文字版 PDF”重新导出。</p>}
+              {pdfCheck.report.expectedChineseText && !pdfCheck.report.hasChineseText && <p>当前简历含中文，但 PDF 提取结果没有中文。请确认选择的是当前版本，并检查导出后中文是否缺失。</p>}
+              {!!pdfCheck.report.blankPages.length && <p>第 {pdfCheck.report.blankPages.join("、")} 页几乎没有可提取文字。</p>}
+              {!!pdfCheck.report.missingFields.length && <p>当前简历中的这些字段未能在 PDF 文字里找到：{pdfCheck.report.missingFields.join("、")}。请检查是否导出了旧版本，或是否有文字缺失。</p>}
+              {pdfCheck.report.preview && <details><summary>查看提取文字片段</summary><p>{pdfCheck.report.preview}</p></details>}
+              <small>只在当前浏览器读取文件，不上传或保存 PDF。此检查不判断版式，也不能保证招聘系统一定正确解析；提交前仍请打开 PDF 人工核对。</small>
+            </>}
+          </section>}
           <article className={`resume-paper ${template}`}>
             {remainingSamples.length > 0 && <div className="sample-document-note">演示资料 · 仍有示例内容，请核对后使用</div>}
             <header className="resume-header">
