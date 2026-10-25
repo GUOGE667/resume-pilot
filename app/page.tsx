@@ -28,17 +28,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { analyzeDraftJobRequirements, compareResumeDrafts } from "@/lib/version-compare";
 import { collectPageBreakpoints, planPageSlices } from "@/lib/pdf-pagination";
 import { evaluatePdfReadability, type PdfReadabilityReport } from "@/lib/pdf-readability";
+import { parseResumePdfText, type PdfResumeImportPreview } from "@/lib/resume-pdf-import";
+import { checkResumeContent, type ResumeFeedback } from "@/lib/resume-feedback";
 import { createResumeBackup, DRAFT_FIELDS, MAX_BACKUP_BYTES, MAX_ENTRIES, parseResumeBackup, type DraftTextField, type ResumeDraft } from "@/lib/resume-backup";
 import { activeVersion, createVersionStore, createVersionsBackup, deleteInactiveVersion, duplicateActiveVersion, loadVersionStore, MAX_VERSION_BACKUP_BYTES, MAX_VERSIONS, parseVersionsBackup, renameActiveVersion, selectVersion, updateActiveDraft, VERSION_STORAGE_KEY, type ResumeVersionStore } from "@/lib/resume-versions";
-
-type Optimization = {
-  headline: string;
-  optimizedText: string;
-  strengths: string[];
-  improvements: string[];
-  keywords: string[];
-  source: "ai" | "fallback";
-};
 
 type CareerFeedback = {
   source: "echohire";
@@ -134,6 +127,25 @@ function persistWorkspace(value: ResumeVersionStore): boolean {
 
 const splitLines = (value: string) => value.split(/[；;\n]/).map((item) => item.trim()).filter(Boolean);
 
+function pdfItemsToLines(items: readonly unknown[]): string {
+  const lines: string[] = [];
+  let line = "";
+  let lastY: number | undefined;
+  const flush = () => { if (line.trim()) lines.push(line.trim()); line = ""; };
+  for (const item of items) {
+    if (!item || typeof item !== "object" || !("str" in item) || typeof item.str !== "string") continue;
+    const part = item as { str: string; hasEOL?: boolean; transform?: number[] };
+    const y = part.transform?.[5];
+    if (line && typeof y === "number" && typeof lastY === "number" && Math.abs(y - lastY) > 2) flush();
+    if (line && /[A-Za-z0-9]$/.test(line) && /^[A-Za-z0-9]/.test(part.str)) line += " ";
+    line += part.str;
+    if (part.hasEOL) flush();
+    lastY = typeof y === "number" ? y : undefined;
+  }
+  flush();
+  return lines.join("\n");
+}
+
 export default function Home() {
   const [storedWorkspace] = useState(readStoredWorkspace);
   const [incomingFeedback] = useState(readCareerFeedback);
@@ -152,15 +164,17 @@ export default function Home() {
   const [saveError, setSaveError] = useState(storedWorkspace.error);
   const [backupError, setBackupError] = useState("");
   const [pendingImport, setPendingImport] = useState<({ kind: "draft"; draft: ResumeDraft; exportedAt: string; fileName: string } | { kind: "versions"; store: ResumeVersionStore; exportedAt: string; fileName: string }) | null>(null);
+  const pdfImportInputRef = useRef<HTMLInputElement>(null);
+  const [pendingPdfImport, setPendingPdfImport] = useState<(PdfResumeImportPreview & { fileName: string }) | null>(null);
+  const [pdfImportError, setPdfImportError] = useState("");
+  const [readingPdfImport, setReadingPdfImport] = useState(false);
   const [activeTab, setActiveTab] = useState(incomingFeedback.feedback ? "project" : "profile");
   const [template, setTemplate] = useState("modern");
-  const [optimizing, setOptimizing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [checkingPdf, setCheckingPdf] = useState(false);
   const [pdfCheck, setPdfCheck] = useState<{ fileName: string; report: PdfReadabilityReport } | null>(null);
   const [pdfCheckError, setPdfCheckError] = useState("");
-  const [optimization, setOptimization] = useState<Optimization | null>(null);
-  const [optimizationTarget, setOptimizationTarget] = useState<{ section: string; index: number; original: string } | null>(null);
+  const [optimization, setOptimization] = useState<ResumeFeedback | null>(null);
   const [selectedExperience, setSelectedExperience] = useState(0);
   const [selectedProject, setSelectedProject] = useState(0);
   const [careerFeedback, setCareerFeedback] = useState<CareerFeedback | null>(incomingFeedback.feedback);
@@ -175,7 +189,6 @@ export default function Home() {
       draftRef.current = nextDraft;
       setDraft(nextDraft);
       setOptimization(null);
-      setOptimizationTarget(null);
       setPdfCheck(null);
       setPdfCheckError("");
     }
@@ -387,6 +400,73 @@ export default function Home() {
     setNotice(success ? pendingImport.kind === "versions" ? "全部版本已恢复并保存在当前浏览器" : "当前版本已恢复并保存在当前浏览器" : "草稿已载入，但浏览器保存失败；请先保留备份文件");
   };
 
+  const selectResumePdf = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setPdfImportError("");
+    setPendingPdfImport(null);
+    if (versionStoreRef.current.versions.length >= MAX_VERSIONS) {
+      setPdfImportError(`已保存 ${MAX_VERSIONS} 份简历。请先下载备份并删除一个旧版本，再导入 PDF。`);
+      return;
+    }
+    if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") {
+      setPdfImportError("请选择 PDF 文件。");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setPdfImportError("PDF 不能超过 10 MB，请选择较小的文件。");
+      return;
+    }
+    setReadingPdfImport(true);
+    try {
+      const { getDocument, GlobalWorkerOptions } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+      const task = getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+      try {
+        const document = await task.promise;
+        if (document.numPages > 10) throw new Error("目前最多支持导入 10 页 PDF，请先选择较短的简历。");
+        const pages: string[] = [];
+        for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+          const page = await document.getPage(pageNumber);
+          pages.push(pdfItemsToLines((await page.getTextContent()).items));
+        }
+        setPendingPdfImport({ ...parseResumePdfText(pages), fileName: file.name });
+      } finally {
+        await task.destroy();
+      }
+    } catch (error) {
+      setPdfImportError(error instanceof Error && !/worker|document|Invalid PDF/i.test(error.message) ? error.message : "无法读取这份 PDF。请确认文件未损坏、未加密且含可选择的文字。");
+    } finally {
+      setReadingPdfImport(false);
+    }
+  };
+
+  const confirmResumePdfImport = () => {
+    if (!pendingPdfImport) return;
+    try {
+      let next = duplicateActiveVersion(versionStoreRef.current, crypto.randomUUID());
+      next = updateActiveDraft(next, pendingPdfImport.draft);
+      const baseName = `PDF 导入 ${next.versions.length}`;
+      let name = baseName;
+      for (let suffix = 2; next.versions.some((item) => item.id !== next.activeId && item.name === name); suffix += 1) name = `${baseName}-${suffix}`;
+      next = renameActiveVersion(next, name);
+      if (!applyWorkspace(next)) {
+        setPdfImportError("导入未保存：当前浏览器存储空间不足。原版本未改变，请保留 PDF 文件并清理空间后重试。");
+        return;
+      }
+      setVersionName(name);
+      setPendingPdfImport(null);
+      setPdfImportError("");
+      setActiveTab("profile");
+      setSelectedExperience(0);
+      setSelectedProject(0);
+      setNotice("PDF 已导入为新版本。请继续核对和补全内容，原版本未覆盖。");
+    } catch (error) {
+      setPdfImportError(error instanceof Error ? error.message : "无法导入 PDF，请重试。");
+    }
+  };
+
   const startInterview = () => {
     if (draft.jobDescription.trim().length < 20) {
       setNotice("请先填写至少 20 字的职位 JD");
@@ -418,34 +498,14 @@ export default function Home() {
     : activeTab === "project" ? draft.projects[selectedProject]?.description ?? ""
     : activeTab === "target" ? draft.jobDescription : draft.summary;
 
-  const optimizeCurrent = async () => {
-    const target = { section: activeTab, index: activeTab === "experience" ? selectedExperience : selectedProject, original: currentContent };
-    setOptimizing(true);
+  const optimizeCurrent = () => {
     setNotice("");
     setOptimization(null);
-    setOptimizationTarget(null);
     try {
-      const response = await fetch("/api/optimize", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ section: activeTab, content: currentContent, jobDescription: draft.jobDescription, title: draft.title }) });
-      const result = await response.json() as Optimization & { error?: string };
-      if (!response.ok) throw new Error(result.error || "优化失败，请重试。");
-      setOptimization(result);
-      setOptimizationTarget(target);
+      setOptimization(checkResumeContent({ section: activeTab as "profile" | "experience" | "project" | "target", content: currentContent, jobDescription: draft.jobDescription, title: draft.title }));
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "优化失败，请重试。");
-    } finally { setOptimizing(false); }
-  };
-
-  const applyOptimization = () => {
-    if (!optimization || !optimizationTarget || activeTab === "target" || optimizationTarget.section !== activeTab || optimizationTarget.original !== currentContent ||
-      (activeTab === "experience" && (optimizationTarget.index !== selectedExperience || !draft.experiences[selectedExperience])) ||
-      (activeTab === "project" && (optimizationTarget.index !== selectedProject || !draft.projects[selectedProject]))) {
-      setNotice("当前内容已变化，请重新检查后再应用");
-      return;
+      setNotice(error instanceof Error ? error.message : "检查失败，请重试。");
     }
-    if (activeTab === "experience") updateEntry("experiences", optimizationTarget.index, "description", optimization.optimizedText);
-    else if (activeTab === "project") updateEntry("projects", optimizationTarget.index, "description", optimization.optimizedText);
-    else update("summary", optimization.optimizedText);
-    setNotice("优化内容已应用，可继续编辑");
   };
 
   const exportTextPdf = () => {
@@ -520,11 +580,8 @@ export default function Home() {
     const checkedDraft = draftRef.current;
     setCheckingPdf(true);
     try {
-      const [{ getDocument, GlobalWorkerOptions }, { default: workerUrl }] = await Promise.all([
-        import("pdfjs-dist/legacy/build/pdf.mjs"),
-        import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url"),
-      ]);
-      GlobalWorkerOptions.workerSrc = workerUrl;
+      const { getDocument, GlobalWorkerOptions } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
       const task = getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
       try {
         const document = await task.promise;
@@ -620,7 +677,7 @@ export default function Home() {
           <a className="career-route-link" href={`${ECHOHIRE_URL}#career`}>查看职业路线 <ArrowUpRight size={16} /></a>
           <div className="privacy-note">
             <strong>本地私有保存</strong>
-            <p>修改后自动保存在当前浏览器；清除浏览器数据会丢失草稿。“检查当前内容”使用免费规则，不调用付费模型。</p>
+            <p>修改后自动保存在当前浏览器；清除浏览器数据会丢失草稿。“检查当前内容”和 PDF 导入都在浏览器内处理，不调用付费模型。</p>
           </div>
         </aside>
 
@@ -630,6 +687,16 @@ export default function Home() {
             <div><strong>{pristineExample ? "这是一份虚构的演示简历" : "简历中仍有示例内容"}</strong><p>请核对并替换：{remainingSamples.join("、")}。导出 PDF 前确认这些内容属于你本人。</p></div>
             {pristineExample && <Button variant="outline" onClick={clearExample}>清空示例，开始填写</Button>}
           </div>}
+          <section className="pdf-import-panel" aria-labelledby="pdf-import-title">
+            <div className="pdf-import-intro">
+              <div><strong id="pdf-import-title">已有 PDF 简历？</strong><p>在当前浏览器提取文字，先逐项核对和修改，再保存为新版本。支持文字可选择的 PDF，扫描件暂不支持。</p></div>
+              <Button variant="outline" disabled={readingPdfImport || versionStore.versions.length >= MAX_VERSIONS} onClick={() => pdfImportInputRef.current?.click()}>{readingPdfImport ? <LoaderCircle className="spin" /> : <Upload />}{readingPdfImport ? "正在读取" : "导入已有 PDF"}</Button>
+              <input ref={pdfImportInputRef} className="backup-file-input" type="file" accept="application/pdf,.pdf" aria-label="选择已有 PDF 简历" onChange={(event) => void selectResumePdf(event)} />
+            </div>
+            {versionStore.versions.length >= MAX_VERSIONS && <p className="pdf-import-hint">已达到 {MAX_VERSIONS} 份版本上限。请先备份并删除一个旧版本。</p>}
+            {pdfImportError && <p className="pdf-import-error" role="alert">{pdfImportError}</p>}
+            {pendingPdfImport && <PdfImportReview preview={pendingPdfImport} onChange={(nextDraft) => setPendingPdfImport((current) => current ? { ...current, draft: nextDraft } : null)} onConfirm={confirmResumePdfImport} onCancel={() => { setPendingPdfImport(null); setPdfImportError(""); }} />}
+          </section>
           <details className="version-panel">
             <summary><span>简历版本</span><strong>{currentVersion.name}</strong><small>{versionStore.versions.length}/{MAX_VERSIONS} 份</small><ChevronDown className="version-chevron" aria-hidden="true" /></summary>
             <div className="version-panel-body">
@@ -717,7 +784,7 @@ export default function Home() {
           </details>
           <div className="editor-heading">
             <div><span className="eyebrow">Resume editor · 01</span><h1>把经历写成证据</h1><p className="editor-deck">清楚、具体、可信。让每一段内容都经得起招聘者追问。</p></div>
-            <Button variant="outline" className="ai-button" onClick={optimizeCurrent} disabled={optimizing || (activeTab === "experience" && !draft.experiences.length) || (activeTab === "project" && !draft.projects.length)}>{optimizing ? <LoaderCircle className="spin" /> : <Sparkles />}{optimizing ? "正在检查" : "检查当前内容"}</Button>
+            <Button variant="outline" className="ai-button" onClick={optimizeCurrent} disabled={(activeTab === "experience" && !draft.experiences.length) || (activeTab === "project" && !draft.projects.length)}><Sparkles />检查当前内容</Button>
           </div>
 
           <Tabs value={activeTab} onValueChange={(value: string) => { setActiveTab(value); setOptimization(null); }} className="editor-tabs">
@@ -817,10 +884,11 @@ export default function Home() {
             <div className="career-feedback-actions"><Button onClick={() => { setActiveTab("project"); setNotice("请按面试反馈补充项目证据，再点击“检查当前内容”"); }}>开始修改项目经历</Button><a href={`${ECHOHIRE_URL}#career`}>返回职业路线</a><button type="button" onClick={() => setCareerFeedback(null)}>暂时收起</button></div>
           </section>}
           {optimization && <section className="coach-card" aria-live="polite">
-            <div className="coach-heading"><span><Sparkles /></span><div><small>{optimization.source === "ai" ? "编辑建议" : "基础检查"}</small><h2>{optimization.headline}</h2></div></div>
-            <div className="coach-columns"><div><strong>做得不错</strong>{optimization.strengths.map((item) => <p key={item}><Check />{item}</p>)}</div><div><strong>建议改进</strong>{optimization.improvements.map((item) => <p key={item}><ArrowUpRight />{item}</p>)}</div></div>
-            <div className="keyword-row">{optimization.keywords.map((item) => <span key={item}>{item}</span>)}</div>
-            {activeTab !== "target" && <Button onClick={applyOptimization}>应用优化版本</Button>}
+            <div className="coach-heading"><span><Sparkles /></span><div><small>浏览器本地规则检查</small><h2>{optimization.headline}</h2></div></div>
+            {optimization.strengths.length > 0 && <div className="coach-strengths"><strong>已写出的证据</strong>{optimization.strengths.map((item) => <p key={item}><Check />{item}</p>)}</div>}
+            <div className="coach-findings"><strong>按原句修改</strong>{optimization.findings.length > 0 ? optimization.findings.map((item, index) => <div className="coach-finding" key={`${item.quote}-${index}`}><blockquote>“{item.quote}”</blockquote><p><b>问题：</b>{item.issue}</p><p><b>下一步：</b>{item.suggestion}</p></div>) : <p>未发现明显的结构问题。仍请核对事实、语句和岗位相关性。</p>}</div>
+            {optimization.keywords.length > 0 && <div className="keyword-row">{optimization.keywords.map((item) => <span key={item}>{item}</span>)}</div>}
+            <small className="coach-note">这里只提供修改线索，不代写事实或编造数据；请在左侧原文中自行修改。</small>
           </section>}
           {notice && <output className="notice" aria-live="polite">{notice}</output>}
         </section>
@@ -857,6 +925,36 @@ export default function Home() {
       </section>
     </main>
   );
+}
+
+function PdfImportReview({ preview, onChange, onConfirm, onCancel }: { preview: PdfResumeImportPreview & { fileName: string }; onChange: (draft: ResumeDraft) => void; onConfirm: () => void; onCancel: () => void }) {
+  const draft = preview.draft;
+  const editText = (field: "name" | "title" | "email" | "phone" | "city" | "summary" | "skills", value: string) => onChange({ ...draft, [field]: value });
+  const editEducation = (index: number, field: keyof ResumeDraft["educations"][number], value: string) => onChange({ ...draft, educations: draft.educations.map((entry, position) => position === index ? { ...entry, [field]: value } : entry) });
+  const editExperience = (index: number, field: keyof ResumeDraft["experiences"][number], value: string) => onChange({ ...draft, experiences: draft.experiences.map((entry, position) => position === index ? { ...entry, [field]: value } : entry) });
+  const editProject = (index: number, field: keyof ResumeDraft["projects"][number], value: string) => onChange({ ...draft, projects: draft.projects.map((entry, position) => position === index ? { ...entry, [field]: value } : entry) });
+  const hasContent = [draft.name, draft.title, draft.email, draft.phone, draft.city, draft.summary, draft.skills].some((value) => value.trim()) ||
+    [...draft.educations, ...draft.experiences, ...draft.projects].some((entry) => Object.values(entry).some((value) => value.trim()));
+  return <div className="pdf-import-review" aria-live="polite">
+    <div className="pdf-import-review-heading"><div><strong>核对 PDF 导入预览</strong><p>{preview.fileName} · 仅在你确认后创建新版本，当前简历不会被覆盖。</p></div><button type="button" onClick={onCancel} aria-label="取消 PDF 导入">×</button></div>
+    <p className="pdf-import-detected">自动识别：{preview.detectedFields.length ? preview.detectedFields.join("、") : "暂无可靠字段"}。未识别的内容请参考下方原文，在导入后手动补充。</p>
+    {preview.warnings.length > 0 && <ul className="pdf-import-warnings">{preview.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
+    <div className="pdf-import-fields">
+      <h3>基本信息</h3>
+      <div className="field-grid two"><Field label="姓名" value={draft.name} onChange={(value) => editText("name", value)} /><Field label="求职方向" value={draft.title} onChange={(value) => editText("title", value)} /><Field label="邮箱" value={draft.email} onChange={(value) => editText("email", value)} /><Field label="手机" value={draft.phone} onChange={(value) => editText("phone", value)} /></div>
+      <Field label="所在地" value={draft.city} onChange={(value) => editText("city", value)} />
+      <Field label="个人简介" value={draft.summary} multiline onChange={(value) => editText("summary", value)} />
+      <Field label="技能" value={draft.skills} multiline onChange={(value) => editText("skills", value)} />
+      <h3>教育经历</h3>
+      {draft.educations.length ? draft.educations.map((entry, index) => <div className="pdf-import-entry" key={`education-${index}`}><div className="pdf-import-entry-heading"><strong>教育 {index + 1}</strong><button type="button" onClick={() => onChange({ ...draft, educations: draft.educations.filter((_, position) => position !== index) })}>移除</button></div><div className="field-grid two"><Field label="学校" value={entry.school} onChange={(value) => editEducation(index, "school", value)} /><Field label="专业与学历" value={entry.degree} onChange={(value) => editEducation(index, "degree", value)} /></div><Field label="在读时间" value={entry.date} onChange={(value) => editEducation(index, "date", value)} /></div>) : <p className="pdf-import-empty">未识别教育经历；导入后可在编辑器补充。</p>}
+      <h3>实习或工作经历</h3>
+      {draft.experiences.length ? draft.experiences.map((entry, index) => <div className="pdf-import-entry" key={`experience-${index}`}><div className="pdf-import-entry-heading"><strong>经历 {index + 1}</strong><button type="button" onClick={() => onChange({ ...draft, experiences: draft.experiences.filter((_, position) => position !== index) })}>移除</button></div><div className="field-grid two"><Field label="公司" value={entry.company} onChange={(value) => editExperience(index, "company", value)} /><Field label="职位" value={entry.role} onChange={(value) => editExperience(index, "role", value)} /></div><Field label="时间" value={entry.date} onChange={(value) => editExperience(index, "date", value)} /><Field label="工作内容" value={entry.description} multiline onChange={(value) => editExperience(index, "description", value)} /></div>) : <p className="pdf-import-empty">未识别实习或工作经历；导入后可在编辑器补充。</p>}
+      <h3>项目经历</h3>
+      {draft.projects.length ? draft.projects.map((entry, index) => <div className="pdf-import-entry" key={`project-${index}`}><div className="pdf-import-entry-heading"><strong>项目 {index + 1}</strong><button type="button" onClick={() => onChange({ ...draft, projects: draft.projects.filter((_, position) => position !== index) })}>移除</button></div><div className="field-grid two"><Field label="项目名称" value={entry.name} onChange={(value) => editProject(index, "name", value)} /><Field label="你的角色" value={entry.role} onChange={(value) => editProject(index, "role", value)} /></div><Field label="项目描述" value={entry.description} multiline onChange={(value) => editProject(index, "description", value)} /></div>) : <p className="pdf-import-empty">未识别项目经历；导入后可在编辑器补充。</p>}
+    </div>
+    <details className="pdf-import-raw"><summary>查看 PDF 提取原文</summary><pre>{preview.extractedText}</pre></details>
+    <div className="pdf-import-actions"><Button onClick={onConfirm} disabled={!hasContent}>确认并创建新版本</Button><Button variant="ghost" onClick={onCancel}>取消</Button><small>请逐项核对事实、顺序与排版；此功能不读取扫描件，也不会自动生成缺失经历。</small></div>
+  </div>;
 }
 
 function FormSection({ id, index, title, description, children }: { id: string; index: string; title: string; description: string; children: React.ReactNode }) {
